@@ -1,10 +1,57 @@
-"""Tests for inference endpoint schema validation."""
+"""
+Tests for inference endpoint schema validation.
+
+This module tests the /v1/activity/infer endpoint with focus on:
+- Request validation (schema, required fields, data types)
+- API key authentication
+- Mock inference logic (activity prediction based on pose_conf)
+- Error handling for invalid requests
+"""
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.config import API_KEY
+from app.database import Base, get_db
+from app.models import Device, ActivityEvent
 
-client = TestClient(app)
+# Create in-memory SQLite database for tests
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@pytest.fixture(scope="function")
+def db_session():
+    """Create a test database session."""
+    # Create tables
+    Base.metadata.create_all(bind=engine)
+    
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        # Drop tables after test
+        Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def client(db_session):
+    """Create test client with database dependency override."""
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    
+    app.dependency_overrides[get_db] = override_get_db
+    test_client = TestClient(app)
+    yield test_client
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -36,7 +83,7 @@ def valid_request_data():
     }
 
 
-def test_infer_with_valid_request(valid_request_data):
+def test_infer_with_valid_request(client, valid_request_data):
     """Test inference with valid request returns 200."""
     response = client.post(
         "/v1/activity/infer",
@@ -59,7 +106,7 @@ def test_infer_with_valid_request(valid_request_data):
     assert len(data["results"][0]["top_k"]) >= 3
 
 
-def test_infer_without_api_key(valid_request_data):
+def test_infer_without_api_key(client, valid_request_data):
     """Test that request without API key returns 401."""
     response = client.post(
         "/v1/activity/infer",
@@ -70,7 +117,7 @@ def test_infer_without_api_key(valid_request_data):
     assert "Invalid API key" in response.json()["detail"]
 
 
-def test_infer_with_invalid_api_key(valid_request_data):
+def test_infer_with_invalid_api_key(client, valid_request_data):
     """Test that request with invalid API key returns 401."""
     response = client.post(
         "/v1/activity/infer",
@@ -82,7 +129,7 @@ def test_infer_with_invalid_api_key(valid_request_data):
     assert "Invalid API key" in response.json()["detail"]
 
 
-def test_infer_window_size_mismatch(valid_request_data):
+def test_infer_window_size_mismatch(client, valid_request_data):
     """Test that window.size mismatch with keypoints length returns 422."""
     # Modify keypoints to have 29 frames instead of 30
     valid_request_data["people"][0]["keypoints"] = valid_request_data["people"][0]["keypoints"][:29]
@@ -99,7 +146,7 @@ def test_infer_window_size_mismatch(valid_request_data):
     assert any("window.size" in str(err) or "frames" in str(err).lower() for err in detail)
 
 
-def test_infer_with_low_pose_conf(valid_request_data):
+def test_infer_with_low_pose_conf(client, valid_request_data):
     """Test that low pose_conf returns 'unknown' activity."""
     valid_request_data["people"][0]["pose_conf"] = 0.3
     
