@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Dashboard - {{ device_id }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 10px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #2196F3;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #2196F3;
+            color: white;
+            font-weight: bold;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .confidence {
+            font-weight: bold;
+        }
+        .confidence.high {
+            color: #4CAF50;
+        }
+        .confidence.medium {
+            color: #FF9800;
+        }
+        .confidence.low {
+            color: #f44336;
+        }
+        .activity {
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .activity.standing {
+            background-color: #E3F2FD;
+            color: #1976D2;
+        }
+        .activity.unknown {
+            background-color: #FFF3E0;
+            color: #F57C00;
+        }
+        .refresh-info {
+            color: #666;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+    </style>
+    <script>
+        // Auto refresh every 3 seconds
+        setTimeout(function() {
+            location.reload();
+        }, 3000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <a href="/dashboard" class="back-link">← Back to Main Dashboard</a>
+        <h1>Device: {{ device_id }}</h1>
+        <p>Showing last {{ limit }} events for this device (auto-refreshes every 3 seconds)</p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Camera</th>
+                    <th>Track ID</th>
+                    <th>Activity</th>
+                    <th>Confidence</th>
+                    <th>Window Size</th>
+                    <th>FPS</th>
+                    <th>Time Range (ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ event.camera_id }}</td>
+                    <td>{{ event.track_id }}</td>
+                    <td>
+                        <span class="activity {{ event.activity }}">
+                            {{ event.activity }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="confidence {% if event.confidence >= 0.6 %}high{% elif event.confidence >= 0.4 %}medium{% else %}low{% endif %}">
+                            {{ "%.2f"|format(event.confidence) }}
+                        </span>
+                    </td>
+                    <td>{{ event.window_size }}</td>
+                    <td>{{ event.fps }}</td>
+                    <td>{{ event.ts_start_ms }} - {{ event.ts_end_ms }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 40px;">
+                        No events found for this device
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <div class="refresh-info">
+            Last updated: <span id="timestamp"></span>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('timestamp').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>

@@ -1,6 +1,21 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: cloudhar
+      POSTGRES_PASSWORD: cloudhar
+      POSTGRES_DB: cloudhar
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudhar"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   cloud-har:
     build: .
     ports:
@@ -10,4 +25,13 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DATABASE_URL=postgresql+psycopg://cloudhar:cloudhar@postgres:5432/cloudhar
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  postgres_data:
