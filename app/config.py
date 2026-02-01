@@ -28,8 +28,15 @@ LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 # Database
 # DATABASE_URL: PostgreSQL connection string
 # Format: postgresql+psycopg://user:password@host:port/database
-# Default: Local PostgreSQL instance
+# Default: localhost:5433 (matches docker-compose postgres port mapping 5433:5432)
+# If you run Postgres directly on host, set DATABASE_URL with port 5432 (or your port).
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg://cloudhar:cloudhar@localhost:5432/cloudhar"
+    "postgresql+psycopg://cloudhar:cloudhar@localhost:5433/cloudhar"
 )
+
+# Edge aggregation (frame_event -> window payload bridge)
+# EDGE_WINDOW_SIZE: number of frames per window (constant for this phase)
+EDGE_WINDOW_SIZE: int = int(os.getenv("EDGE_WINDOW_SIZE", "30"))
+# EDGE_CAMERA_ID_DEFAULT: used when source.camera_id / header / query are missing
+EDGE_CAMERA_ID_DEFAULT: str = os.getenv("EDGE_CAMERA_ID_DEFAULT", "cam-1")

@@ -16,16 +16,20 @@ Endpoints:
 - GET /dashboard: Main dashboard page
 - GET /dashboard/devices/{device_id}: Device-specific dashboard
 """
-from fastapi import FastAPI, HTTPException, Header, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader
 from typing import Tuple, Optional, List
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
+import time
 import uuid
 
 from app.config import API_KEY
 from app.database import get_db
 from app.schemas import (
+    DebugInfoSchema,
+    DebugPerPersonSchema,
     InferenceRequestSchema,
     InferenceResponseSchema,
     PersonResultSchema,
@@ -35,18 +39,52 @@ from app.schemas import (
 from app.logging import log_inference_request, get_logger
 from app.health import router as health_router
 from app.services import (
-    upsert_device,
+    compute_input_quality,
     create_activity_event,
-    get_recent_events,
+    get_all_devices,
     get_device_events,
-    get_all_devices
+    get_recent_events,
+    upsert_device,
 )
+from app.config import EDGE_CAMERA_ID_DEFAULT
+from app.aggregation import (
+    get_buffer_details,
+    get_buffer_sizes,
+    get_frame_events_received_count,
+    get_last_windows,
+    ingest_internal_frame,
+)
+from app.edge_schemas import EdgeFrameEventSchema
+from app.normalize import normalize_frame_event
 
 # Initialize FastAPI application
 app = FastAPI(title="Cloud HAR API", version="1.0.0")
 
 # Include health check router
 app.include_router(health_router)
+
+
+@app.exception_handler(OperationalError)
+async def database_unavailable_handler(request: Request, exc: OperationalError):
+    """
+    When PostgreSQL is not running (Connection refused), return a clear message
+    instead of 500. Dashboard gets an HTML page; API routes get 503 JSON.
+    """
+    msg = (
+        "Database unavailable. Start PostgreSQL (e.g. docker-compose up -d postgres) "
+        "or check DATABASE_URL."
+    )
+    if request.url.path.startswith("/dashboard"):
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Database Unavailable</title></head>
+<body style="font-family:sans-serif;max-width:600px;margin:2em auto;padding:1em;">
+  <h1>Database Unavailable</h1>
+  <p>{msg}</p>
+  <p><a href="/dashboard">Retry</a> &middot; <a href="/health">Health</a></p>
+</body></html>"""
+        return HTMLResponse(content=html, status_code=503)
+    return JSONResponse(status_code=503, content={"detail": msg})
+
 
 # Initialize Jinja2 template environment for dashboard rendering
 jinja_env = Environment(loader=FileSystemLoader("app/templates"))
@@ -161,35 +199,45 @@ async def infer_activity(
         HTTPException: 401 if API key is invalid
         HTTPException: 422 if request validation fails
     """
-    # Generate unique request ID for tracking
     request_id = str(uuid.uuid4())
-    
-    # Log request and track latency
+    start_time = time.perf_counter()
+
     with log_inference_request(
         device_id=request.device_id,
         camera_id=request.camera_id,
         num_people=len(request.people),
         request_id=request_id
     ):
-        # Ensure device exists in database (upsert: create if new, get if exists)
         upsert_device(db, request.device_id)
-        
-        # Process each person detected in the window
+
         results = []
+        per_person_debug: List[DebugPerPersonSchema] = []
+        k_count_request: Optional[int] = None
+
         for person in request.people:
-            # Run mock inference to get activity prediction
-            activity, confidence, top_k = mock_inference_logic(person.pose_conf)
-            
-            # Create result object for this person
-            result = PersonResultSchema(
-                track_id=person.track_id,
-                activity=activity,
-                confidence=confidence,
-                top_k=top_k
+            k_count, avg_pose_conf, frames_ok_ratio = compute_input_quality(
+                person.keypoints, request.window.size
             )
-            results.append(result)
-            
-            # Save inference result to database as an activity event
+            if k_count_request is None:
+                k_count_request = k_count
+
+            per_person_debug.append(
+                DebugPerPersonSchema(
+                    avg_pose_conf=round(avg_pose_conf, 4),
+                    frames_ok_ratio=round(frames_ok_ratio, 4),
+                )
+            )
+
+            activity, confidence, top_k = mock_inference_logic(person.pose_conf)
+            results.append(
+                PersonResultSchema(
+                    track_id=person.track_id,
+                    activity=activity,
+                    confidence=confidence,
+                    top_k=top_k
+                )
+            )
+
             create_activity_event(
                 db=db,
                 device_id=request.device_id,
@@ -200,19 +248,113 @@ async def infer_activity(
                 fps=request.window.fps,
                 window_size=request.window.size,
                 activity=activity,
-                confidence=confidence
+                confidence=confidence,
+                k_count=k_count,
+                avg_pose_conf=avg_pose_conf,
+                frames_ok_ratio=frames_ok_ratio,
             )
-        
-        # Build and return response with all predictions
-        response = InferenceResponseSchema(
+
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        debug = DebugInfoSchema(
+            frames_received=request.window.size,
+            k_count=k_count_request or 0,
+            latency_ms=latency_ms,
+            per_person=per_person_debug,
+        )
+
+        return InferenceResponseSchema(
             schema_version=1,
             device_id=request.device_id,
             camera_id=request.camera_id,
             window=request.window,
-            results=results
+            results=results,
+            debug=debug,
         )
-        
-        return response
+
+
+# ============================================================================
+# Edge frame_event aggregation (no DB, no HAR)
+# ============================================================================
+
+def _resolve_camera_id(
+    body: dict,
+    query_camera_id: Optional[str] = None,
+    x_camera_id: Optional[str] = None,
+) -> str:
+    """
+    Resolve camera_id. Priority (literal):
+    1. source.camera_id if present
+    2. Query ?camera_id=...
+    3. Header X-Camera-Id
+    4. Default (e.g. "cam-1")
+    """
+    source = body.get("source") or {}
+    if isinstance(source, dict) and source.get("camera_id"):
+        return str(source["camera_id"])
+    if query_camera_id:
+        return query_camera_id
+    if x_camera_id:
+        return x_camera_id
+    return EDGE_CAMERA_ID_DEFAULT
+
+
+@app.post("/v1/edge/events", status_code=202)
+async def edge_events(
+    body: dict,
+    api_key: str = Depends(verify_api_key),
+    x_camera_id: Optional[str] = Header(None, alias="X-Camera-Id"),
+    camera_id: Optional[str] = Query(None, alias="camera_id"),
+):
+    """
+    Accept frame-level events from the edge (event_type "frame_event").
+    Frames are normalized to internal format and aggregated per
+    (device_id, camera_id, track_id). When a buffer reaches window.size, a Cloud
+    window payload is built and logged (not stored, not sent to inference).
+    camera_id priority: source.camera_id -> ?camera_id= -> X-Camera-Id -> default.
+    """
+    try:
+        EdgeFrameEventSchema.model_validate(body)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid frame_event: {e!s}")
+
+    resolved_camera_id = _resolve_camera_id(body, query_camera_id=camera_id, x_camera_id=x_camera_id)
+    internal_frames = normalize_frame_event(body, resolved_camera_id)
+    completed: List[dict] = []
+    for iframe in internal_frames:
+        completed.extend(ingest_internal_frame(iframe))
+
+    total_received = get_frame_events_received_count()
+    buffer_sizes = get_buffer_sizes()
+    logger.info(
+        "edge_events | frame_events_received=%s | buffers=%s | windows_completed=%s",
+        total_received, buffer_sizes, len(completed),
+    )
+    return {"status": "accepted"}
+
+
+# ============================================================================
+# Debug endpoints (buffers & windows)
+# ============================================================================
+
+@app.get("/debug/buffers")
+async def debug_buffers(api_key: str = Depends(verify_api_key)):
+    """
+    Return current aggregation buffers: key (device_id|camera_id|track_id),
+    frame_count, last_ts_ms per buffer.
+    """
+    return {"buffers": get_buffer_details(), "frame_events_received": get_frame_events_received_count()}
+
+
+@app.get("/debug/windows")
+async def debug_windows(
+    n: int = Query(default=20, ge=1, le=100),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Return last n completed windows (metadata only: device_id, camera_id, track_id,
+    ts_start_ms, ts_end_ms, size, fps). No full keypoints.
+    """
+    return {"windows": get_last_windows(n)}
 
 
 # ============================================================================
@@ -256,6 +398,9 @@ async def get_events(
             "window_size": event.window_size,
             "activity": event.activity,
             "confidence": event.confidence,
+            "k_count": event.k_count,
+            "avg_pose_conf": event.avg_pose_conf,
+            "frames_ok_ratio": event.frames_ok_ratio,
             "created_at": event.created_at.isoformat()
         }
         for event in events
@@ -327,6 +472,9 @@ async def get_device_events_endpoint(
             "window_size": event.window_size,
             "activity": event.activity,
             "confidence": event.confidence,
+            "k_count": event.k_count,
+            "avg_pose_conf": event.avg_pose_conf,
+            "frames_ok_ratio": event.frames_ok_ratio,
             "created_at": event.created_at.isoformat()
         }
         for event in events
