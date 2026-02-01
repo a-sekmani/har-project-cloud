@@ -404,6 +404,161 @@ def test_completed_window_has_expected_structure(client):
     assert w["ts_end_ms"] >= w["ts_start_ms"]
 
 
+def test_completed_window_has_auto_infer_metadata(client):
+    """Completed window metadata includes auto_infer_attempted, auto_infer_status, saved."""
+    base_ts = 5000000
+    for i in range(EDGE_WINDOW_SIZE):
+        body = _make_frame_event(device_id="auto-meta", ts_ms=base_ts + i * 33)
+        response = client.post(
+            "/v1/edge/events",
+            json=body,
+            headers={"X-API-Key": API_KEY},
+        )
+        assert response.status_code == 202
+    windows = get_last_windows(1)
+    assert len(windows) == 1
+    w = windows[0]
+    assert "auto_infer_attempted" in w
+    assert "auto_infer_status" in w
+    assert "saved" in w
+    assert w["auto_infer_status"] in ("ok", "disabled", "failed_db", "failed_validation")
+
+
+def test_auto_infer_disabled(client):
+    """With EDGE_AUTO_INFER disabled (default), completed window has auto_infer_status=disabled."""
+    import app.window_pipeline as wp
+    original = wp.EDGE_AUTO_INFER
+    wp.EDGE_AUTO_INFER = False
+    try:
+        base_ts = 6000000
+        for i in range(EDGE_WINDOW_SIZE):
+            body = _make_frame_event(device_id="no-infer", ts_ms=base_ts + i * 33)
+            response = client.post(
+                "/v1/edge/events",
+                json=body,
+                headers={"X-API-Key": API_KEY},
+            )
+            assert response.status_code == 202
+        windows = get_last_windows(1)
+        assert len(windows) == 1
+        assert windows[0]["auto_infer_attempted"] is False
+        assert windows[0]["auto_infer_status"] == "disabled"
+        assert windows[0]["saved"] is False
+    finally:
+        wp.EDGE_AUTO_INFER = original
+
+
+def test_auto_infer_enabled_event_saved(client):
+    """With EDGE_AUTO_INFER=True, completing a window creates an ActivityEvent (standing)."""
+    from app.database import SessionLocal, engine, Base
+    from app.models import ActivityEvent
+    import app.window_pipeline as wp
+
+    Base.metadata.create_all(bind=engine)
+    original = wp.EDGE_AUTO_INFER
+    wp.EDGE_AUTO_INFER = True
+    try:
+        base_ts = 7000000
+        for i in range(EDGE_WINDOW_SIZE):
+            body = _make_frame_event(device_id="auto-infer-dev", ts_ms=base_ts + i * 33)
+            response = client.post(
+                "/v1/edge/events",
+                json=body,
+                headers={"X-API-Key": API_KEY},
+            )
+            assert response.status_code == 202
+        windows = get_last_windows(1)
+        assert len(windows) == 1
+        assert windows[0]["auto_infer_status"] == "ok"
+        assert windows[0]["saved"] is True
+        db = SessionLocal()
+        try:
+            events = db.query(ActivityEvent).filter(
+                ActivityEvent.device_id == "auto-infer-dev"
+            ).all()
+            assert len(events) >= 1
+            assert events[0].activity == "standing"
+            assert events[0].confidence == 0.6
+        finally:
+            db.close()
+    finally:
+        wp.EDGE_AUTO_INFER = original
+
+
+def test_auto_infer_enabled_low_c_unknown(client):
+    """With EDGE_AUTO_INFER=True and low keypoint confidence, activity is unknown."""
+    def low_c_keypoints():
+        names = list(COCO_17_NAMES)
+        return [
+            {"name": names[i], "x": 0.5 + i * 0.01, "y": 0.2 + i * 0.01, "c": 0.1}
+            for i in range(17)
+        ]
+
+    from app.database import SessionLocal, engine, Base
+    from app.models import ActivityEvent
+    import app.window_pipeline as wp
+
+    Base.metadata.create_all(bind=engine)
+    original = wp.EDGE_AUTO_INFER
+    wp.EDGE_AUTO_INFER = True
+    try:
+        base_ts = 8000000
+        persons = [{"track_id": 0, "keypoints": low_c_keypoints()}]
+        for i in range(EDGE_WINDOW_SIZE):
+            body = _make_frame_event(
+                device_id="low-c-dev", ts_ms=base_ts + i * 33, persons=persons
+            )
+            response = client.post(
+                "/v1/edge/events",
+                json=body,
+                headers={"X-API-Key": API_KEY},
+            )
+            assert response.status_code == 202
+        db = SessionLocal()
+        try:
+            events = db.query(ActivityEvent).filter(
+                ActivityEvent.device_id == "low-c-dev"
+            ).all()
+            assert len(events) >= 1
+            assert events[0].activity == "unknown"
+            assert events[0].confidence == 0.2
+        finally:
+            db.close()
+    finally:
+        wp.EDGE_AUTO_INFER = original
+
+
+def test_db_failure_does_not_break_ingestion(client):
+    """When infer_and_persist raises OperationalError, edge/events still returns 202 and status is failed_db."""
+    from sqlalchemy.exc import OperationalError
+    import app.window_pipeline as wp
+
+    def failing_infer(_request, _db):
+        raise OperationalError("", "", "connection refused")
+
+    original_infer = wp.infer_and_persist
+    wp.infer_and_persist = failing_infer
+    original_auto = wp.EDGE_AUTO_INFER
+    wp.EDGE_AUTO_INFER = True
+    try:
+        base_ts = 9000000
+        for i in range(EDGE_WINDOW_SIZE):
+            body = _make_frame_event(device_id="fail-db-dev", ts_ms=base_ts + i * 33)
+            response = client.post(
+                "/v1/edge/events",
+                json=body,
+                headers={"X-API-Key": API_KEY},
+            )
+            assert response.status_code == 202
+        windows = get_last_windows(1)
+        assert len(windows) == 1
+        assert windows[0]["auto_infer_status"] == "failed_db"
+        assert windows[0]["saved"] is False
+    finally:
+        wp.infer_and_persist = original_infer
+        wp.EDGE_AUTO_INFER = original_auto
+
+
 def test_debug_windows_n_validation(client):
     """GET /debug/windows with n=0 or n=101 returns 422 (ge=1, le=100)."""
     r0 = client.get("/debug/windows", params={"n": 0}, headers={"X-API-Key": API_KEY})
@@ -413,12 +568,13 @@ def test_debug_windows_n_validation(client):
 
 
 def test_debug_buffers_returns_structure(client):
-    """GET /debug/buffers returns buffers list and frame_events_received (with API key)."""
+    """GET /debug/buffers returns buffers, frame_events_received, windows_infer_failed_db."""
     response = client.get("/debug/buffers", headers={"X-API-Key": API_KEY})
     assert response.status_code == 200
     data = response.json()
     assert "buffers" in data
     assert "frame_events_received" in data
+    assert "windows_infer_failed_db" in data
     assert isinstance(data["buffers"], list)
 
 

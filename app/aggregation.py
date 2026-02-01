@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.config import EDGE_CAMERA_ID_DEFAULT, EDGE_WINDOW_SIZE
 from app.normalize import InternalFrame
 from app.schemas import InferenceRequestSchema
+from app.window_pipeline import handle_completed_window, reset_windows_infer_failed_db_count
 
 logger = logging.getLogger("cloud_har.aggregation")
 
@@ -36,6 +37,7 @@ def reset_aggregation_state() -> None:
     _buffers = {}
     _frame_events_received = 0
     _completed_windows_meta = deque(maxlen=_DEBUG_WINDOWS_MAX)
+    reset_windows_infer_failed_db_count()
 
 
 def _normalize_keypoints(keypoints: List[List[float]]) -> List[List[float]]:
@@ -229,7 +231,7 @@ def ingest_internal_frame(iframe: InternalFrame) -> List[Dict[str, Any]]:
         if window_payload:
             completed_windows.append(window_payload)
             w = window_payload["window"]
-            _completed_windows_meta.append({
+            meta = {
                 "device_id": device_id,
                 "camera_id": camera_id,
                 "track_id": track_id,
@@ -237,7 +239,10 @@ def ingest_internal_frame(iframe: InternalFrame) -> List[Dict[str, Any]]:
                 "ts_end_ms": w["ts_end_ms"],
                 "size": w["size"],
                 "fps": w["fps"],
-            })
+            }
+            status = handle_completed_window(window_payload)
+            meta.update(status)
+            _completed_windows_meta.append(meta)
             logger.info(
                 "aggregation window complete | device_id=%s | track_id=%s | "
                 "window_size=%s | ts_start_ms=%s | ts_end_ms=%s",

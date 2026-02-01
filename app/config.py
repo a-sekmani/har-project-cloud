@@ -40,3 +40,5 @@ DATABASE_URL: str = os.getenv(
 EDGE_WINDOW_SIZE: int = int(os.getenv("EDGE_WINDOW_SIZE", "30"))
 # EDGE_CAMERA_ID_DEFAULT: used when source.camera_id / header / query are missing
 EDGE_CAMERA_ID_DEFAULT: str = os.getenv("EDGE_CAMERA_ID_DEFAULT", "cam-1")
+# EDGE_AUTO_INFER: when True, run infer_and_persist on completed window (edge -> DB)
+EDGE_AUTO_INFER: bool = os.getenv("EDGE_AUTO_INFER", "0").lower() in ("1", "true", "yes")

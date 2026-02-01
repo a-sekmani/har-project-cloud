@@ -26,6 +26,7 @@ services:
       - PORT=8000
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DATABASE_URL=postgresql+psycopg://cloudhar:cloudhar@postgres:5432/cloudhar
+      - EDGE_AUTO_INFER=${EDGE_AUTO_INFER:-0}
     depends_on:
       postgres:
         condition: service_healthy
