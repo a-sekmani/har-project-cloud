@@ -120,7 +120,14 @@ def test_multiple_people_same_request(client, keypoint_data, db_session):
 
 
 def test_multiple_people_different_pose_conf(client, keypoint_data, db_session):
-    """Test multiple people with different pose_conf values get correct activities."""
+    """Test multiple people: low keypoint confidence → unknown; good quality + still → standing (Phase 4)."""
+    # Phase 4 uses keypoints for quality: person 7 with low c in keypoints → unknown
+    import copy
+    low_c_keypoints = copy.deepcopy(keypoint_data)
+    for frame in low_c_keypoints:
+        for kp in frame:
+            kp[2] = 0.05  # mean_pose_conf < 0.15 → quality gate → unknown
+
     request_data = {
         "schema_version": 1,
         "device_id": "pi-001",
@@ -132,48 +139,33 @@ def test_multiple_people_different_pose_conf(client, keypoint_data, db_session):
             "size": 30
         },
         "people": [
-            {
-                "track_id": 7,
-                "keypoints": keypoint_data,
-                "pose_conf": 0.3  # Should be "unknown" (0.2)
-            },
-            {
-                "track_id": 8,
-                "keypoints": keypoint_data,
-                "pose_conf": 0.8  # Should be "standing" (0.6)
-            }
+            {"track_id": 7, "keypoints": low_c_keypoints, "pose_conf": 0.3},
+            {"track_id": 8, "keypoints": keypoint_data, "pose_conf": 0.8}
         ]
     }
-    
+
     response = client.post(
         "/v1/activity/infer",
         json=request_data,
         headers={"X-API-Key": API_KEY}
     )
-    
+
     assert response.status_code == 200
     data = response.json()
-    
-    # Verify results
     results = {r["track_id"]: r for r in data["results"]}
-    
-    # Person 1: pose_conf = 0.3 → unknown, confidence = 0.2
+
     assert results[7]["activity"] == "unknown"
     assert results[7]["confidence"] == 0.2
-    
-    # Person 2: pose_conf = 0.8 → standing, confidence = 0.6
+
     assert results[8]["activity"] == "standing"
-    assert results[8]["confidence"] == 0.6
-    
-    # Verify both events saved correctly
+    assert 0.3 <= results[8]["confidence"] <= 0.9  # Phase 4: confidence from motion_energy
+
     events = db_session.query(ActivityEvent).filter(
         ActivityEvent.device_id == "pi-001"
     ).all()
     assert len(events) == 2
-    
-    # Verify activities in database
     event_by_track = {e.track_id: e for e in events}
     assert event_by_track[7].activity == "unknown"
     assert event_by_track[7].confidence == 0.2
     assert event_by_track[8].activity == "standing"
-    assert event_by_track[8].confidence == 0.6
+    assert 0.3 <= event_by_track[8].confidence <= 0.9  # Phase 4

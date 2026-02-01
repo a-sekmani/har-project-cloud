@@ -97,8 +97,8 @@ def test_end_to_end_flow(client, keypoint_data, db_session):
     assert len(data["results"]) == 1
     assert data["results"][0]["track_id"] == 7
     assert data["results"][0]["activity"] == "standing"
-    assert data["results"][0]["confidence"] == 0.6
-    
+    assert 0.3 <= data["results"][0]["confidence"] <= 0.9  # Phase 4: confidence from motion_energy
+
     # Step 3: Query /v1/events → verify event appears
     response = client.get("/v1/events?limit=10")
     assert response.status_code == 200
@@ -109,8 +109,8 @@ def test_end_to_end_flow(client, keypoint_data, db_session):
     our_event = next((e for e in events_data if e["device_id"] == "pi-001" and e["track_id"] == 7), None)
     assert our_event is not None
     assert our_event["activity"] == "standing"
-    assert our_event["confidence"] == 0.6
-    
+    assert 0.3 <= our_event["confidence"] <= 0.9  # Phase 4: confidence from motion_energy
+
     # Step 4: Query /v1/devices → verify device appears
     response = client.get("/v1/devices")
     assert response.status_code == 200
@@ -132,6 +132,7 @@ def test_end_to_end_flow(client, keypoint_data, db_session):
     assert our_device_event is not None
     assert our_device_event["device_id"] == "pi-001"
     assert our_device_event["activity"] == "standing"
+    assert 0.3 <= our_device_event["confidence"] <= 0.9  # Phase 4
 
 
 def test_multiple_requests_sequence(client, keypoint_data, db_session):

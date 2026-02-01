@@ -1,5 +1,5 @@
 """Pydantic schemas for request/response validation."""
-from typing import List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -102,9 +102,11 @@ class PersonResultSchema(BaseModel):
 
 
 class DebugPerPersonSchema(BaseModel):
-    """Debug metrics for one person (input quality)."""
+    """Debug metrics for one person (input quality + optional feature-based debug)."""
     avg_pose_conf: float = Field(ge=0.0, le=1.0)
     frames_ok_ratio: float = Field(ge=0.0, le=1.0)
+    features: Optional[Dict[str, Any]] = None  # motion_energy, missing_ratio, mean_pose_conf
+    thresholds: Optional[Dict[str, float]] = None  # TH_STILL, TH_MOVE
 
 
 class DebugInfoSchema(BaseModel):

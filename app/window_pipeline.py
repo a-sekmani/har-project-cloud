@@ -1,5 +1,5 @@
 """
-Window completion hook: when a 30-frame window is built by aggregation,
+Window completion hook: when a window of EDGE_WINDOW_SIZE frames is built by aggregation,
 optionally run infer_and_persist (EDGE_AUTO_INFER) and return status for debug.
 """
 import logging
