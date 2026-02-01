@@ -1,6 +1,6 @@
 # Cloud HAR - Human Activity Recognition API
 
-Cloud service for receiving skeleton data from edge devices and returning mock activity recognition results. It accepts **frame-level events** from the edge (`POST /v1/edge/events`), normalizes and aggregates them into windows in memory; it also accepts **window-level inference requests** (`POST /v1/activity/infer`) and returns mock activity predictions. Results are stored in PostgreSQL and can be viewed through a web dashboard.
+Cloud service for receiving skeleton data from edge devices and returning activity recognition results. It accepts **frame-level events** from the edge (`POST /v1/edge/events`), normalizes and aggregates them into windows in memory; it also accepts **window-level inference requests** (`POST /v1/activity/infer`) and returns feature-based activity predictions (standing / moving / unknown). Results are stored in PostgreSQL and can be viewed through a web dashboard.
 
 ## Requirements
 
@@ -26,12 +26,15 @@ har-project-cloud/
     api_schemas.py       # Pydantic schemas for API responses
     normalize.py         # Edge payload → InternalFrame normalization (COCO-17)
     aggregation.py      # In-memory buffers, window build (frame_event → window payload)
+    features.py          # Temporal features (motion_energy, center_drift, missing_ratio)
+    inference.py         # Feature-based activity inference (standing / moving / unknown)
+    window_pipeline.py   # Window completion hook: auto-infer on completed window
     templates/           # Jinja2 templates for dashboard
       dashboard.html
       device_dashboard.html
   docs/
     EDGE_DATA_SHAPE.md   # Edge data contract and examples
-  tests/                 # Test suite (82 automated tests)
+  tests/                 # Test suite (101 automated tests)
     test_health.py
     test_infer_schema.py
     test_database.py
@@ -39,6 +42,8 @@ har-project-cloud/
     test_edge_aggregation.py  # POST /v1/edge/events, aggregation, debug endpoints
     test_normalize.py        # normalize_frame_event unit tests
     test_aggregation.py      # ingest_internal_frame unit tests
+    test_features.py         # extract_window_features unit tests
+    test_inference_rules.py  # infer_activity (standing/moving/unknown) unit tests
     test_golden_edge.py
     test_multiple_people.py
     test_multiple_devices.py
@@ -196,14 +201,13 @@ Main inference endpoint. Accepts skeleton window data and returns activity predi
     - `K = 17` or `25`
     - Last dimension = 3 (x, y, confidence)
 
-## Mock Inference Logic
+## Feature-based Inference (Phase 4)
 
-- If `pose_conf < 0.4` → `activity = "unknown"`, `confidence = 0.2`
-- Otherwise → `activity = "standing"`, `confidence = 0.6`
+Inference uses **temporal features** from the keypoints window. **Quality gate:** only `unknown` when `mean_pose_conf < 0.25` or `missing_ratio > 0.4`; above the gate, `pose_conf` is used only to **reduce confidence** (not to block classification). **Locomotion (moving)** is based on **center_drift** (body center displacement from first to last frame), not limb jitter (`motion_energy`), so walking is detected even when wrists/ankles vibrate or drop. Body center = centroid of shoulders + hips (COCO-17). **standing** = still + micro_motion (in-place); **moving** = locomotion only. Debug exposes `center_drift`, `motion_energy`, `window_duration_s`, `avg_center_speed` per window for calibration. **Calibrate TH_CENTER_DRIFT:** log these for ~30 standing and ~30 walking windows, take median per class, set the threshold between the two medians.
 
 ## Edge frame events (POST /v1/edge/events)
 
-Accepts frame-level events from the edge (`event_type: "frame_event"`). Frames are normalized and aggregated in memory per `(device_id, camera_id, track_id)`; when a buffer reaches the window size (default 30 frames), a Cloud window payload is built and logged. **Optionally**, when `EDGE_AUTO_INFER` is enabled, the same inference + persist logic as `/v1/activity/infer` runs automatically (no HTTP); results are saved to PostgreSQL and appear on the dashboard.
+Accepts frame-level events from the edge (`event_type: "frame_event"`). Frames are normalized and aggregated in memory per `(device_id, camera_id, track_id)`; when a buffer reaches the window size (default **30 frames**, ≈1 s at 30 fps), a Cloud window payload is built and logged. **Optionally**, when `EDGE_AUTO_INFER` is enabled, the same inference + persist logic as `/v1/activity/infer` runs automatically (no HTTP); results are saved to PostgreSQL and appear on the dashboard.
 
 **Headers:**
 - `X-API-Key`: Required (same as inference; 401 if missing or invalid)
@@ -222,7 +226,7 @@ Full contract and examples: **[docs/EDGE_DATA_SHAPE.md](docs/EDGE_DATA_SHAPE.md)
 - `GET /debug/buffers` — current aggregation buffers (key, frame_count, last_ts_ms), `frame_events_received`, and `windows_infer_failed_db` (count of auto-infer failures due to DB)
 - `GET /debug/windows?n=20` — last n completed windows; each window includes `auto_infer_attempted`, `auto_infer_status` (ok | failed_db | failed_validation | disabled), and `saved` (`n` between 1 and 100)
 
-**Flow:** Edge sends `frame_event` → validated by `EdgeFrameEventSchema` → normalized to `InternalFrame` (COCO-17 order) → buffered per `(device_id, camera_id, track_id)` → when buffer reaches 30 frames, a window payload is built. If **EDGE_AUTO_INFER** is true, `infer_and_persist` runs (same logic as `/v1/activity/infer`) and the event is saved to the database; otherwise only logging. If the database is unavailable during auto-infer, ingestion still returns 202 and the failure is logged and counted in `windows_infer_failed_db`.
+**Flow:** Edge sends `frame_event` → validated by `EdgeFrameEventSchema` → normalized to `InternalFrame` (COCO-17 order) → buffered per `(device_id, camera_id, track_id)` → when buffer reaches the window size (default 30 frames), a window payload is built. If **EDGE_AUTO_INFER** is true, `infer_and_persist` runs (same logic as `/v1/activity/infer`) and the event is saved to the database; otherwise only logging. If the database is unavailable during auto-infer, ingestion still returns 202 and the failure is logged and counted in `windows_infer_failed_db`.
 
 ## Data Retrieval Endpoints
 
@@ -290,15 +294,17 @@ http://localhost:8000/dashboard/devices/pi-001
 
 ## Testing
 
-The project includes **82 automated tests** covering:
+The project includes **101 automated tests** covering:
 - Health check endpoint
-- Request validation and mock inference schema
+- Request validation and feature-based inference
 - Database operations
 - API edge cases (limits, empty DB, sorting)
 - **Edge ingestion:** POST /v1/edge/events (validation, 401, camera_id priority, extra fields, keypoints)
 - **Aggregation:** window completion, multi-person buffers, debug endpoints
 - **Normalization:** `normalize_frame_event` (COCO-17 order, undetected points, ts conversion, multi-person)
 - **Aggregation unit:** `ingest_internal_frame` (buffers, window metadata, buffer clear)
+- **Features:** `extract_window_features` (motion_energy, missing_ratio, static/linear motion)
+- **Inference rules:** `infer_activity` (standing / moving / unknown from center_drift, motion_energy, quality gate)
 - Multiple people in inference requests
 - Multiple devices and upsert behavior
 - Response format validation
@@ -322,6 +328,8 @@ pytest tests/test_database.py -v
 pytest tests/test_edge_aggregation.py -v
 pytest tests/test_normalize.py -v
 pytest tests/test_aggregation.py -v
+pytest tests/test_features.py -v
+pytest tests/test_inference_rules.py -v
 pytest tests/test_api_edge_cases.py -v
 
 # Run with coverage report
@@ -331,12 +339,14 @@ pytest --cov=app --cov-report=term-missing
 ### Test Files
 
 - `test_health.py`: Health check endpoint
-- `test_infer_schema.py`: Request validation and mock inference
+- `test_infer_schema.py`: Request validation and feature-based inference
 - `test_database.py`: Database operations and endpoints
 - `test_edge_aggregation.py`: POST /v1/edge/events, aggregation, debug buffers/windows, API key, camera_id
 - `test_normalize.py`: `normalize_frame_event` unit tests (COCO-17 order, undetected points, multi-person)
 - `test_aggregation.py`: `ingest_internal_frame` unit tests (buffers, window completion, buffer clear)
-- `test_golden_edge.py`: Golden edge payload and inference
+- `test_features.py`: `extract_window_features` unit tests (motion_energy, center_drift, missing_ratio)
+- `test_inference_rules.py`: `infer_activity` unit tests (standing / moving / unknown)
+- `test_golden_edge.py`: Golden edge payload and inference (standing / moving)
 - `test_api_edge_cases.py`: Edge cases and validation
 - `test_multiple_people.py`: Multiple people scenarios
 - `test_multiple_devices.py`: Multiple devices and upsert
@@ -352,9 +362,9 @@ pytest --cov=app --cov-report=term-missing
 - `PORT`: Server port (default: `8000`)
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 - `DATABASE_URL`: PostgreSQL connection string (default: `postgresql+psycopg://cloudhar:cloudhar@localhost:5433/cloudhar`)
-- `EDGE_WINDOW_SIZE`: Frames per aggregation window (default: `30`)
+- `EDGE_WINDOW_SIZE`: Frames per aggregation window (default: `30`, ≈1 s at 30 fps)
 - `EDGE_CAMERA_ID_DEFAULT`: Default camera_id when not provided by edge (default: `cam-1`)
-- `EDGE_AUTO_INFER`: When `1`, `true`, or `yes`, run inference + persist when a 30-frame window completes (edge → DB); default: `0` (log only)
+- `EDGE_AUTO_INFER`: When `1`, `true`, or `yes`, run inference + persist when a window completes (edge → DB; default window size 30 frames); default: `0` (log only)
 
 **Note:** When using Docker Compose, `DATABASE_URL` is set to the postgres service; other defaults apply.
 

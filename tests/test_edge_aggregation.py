@@ -478,7 +478,7 @@ def test_auto_infer_enabled_event_saved(client):
             ).all()
             assert len(events) >= 1
             assert events[0].activity == "standing"
-            assert events[0].confidence == 0.6
+            assert 0.3 <= events[0].confidence <= 0.9  # Phase 4: confidence from motion_energy
         finally:
             db.close()
     finally:

@@ -105,7 +105,7 @@ def test_infer_saves_to_database(client, valid_request_data, db_session):
     assert event.camera_id == "cam-1"
     assert event.track_id == 7
     assert event.activity == "standing"
-    assert event.confidence == 0.6
+    assert 0.3 <= event.confidence <= 0.9  # Phase 4: confidence from motion_energy
 
 
 def test_get_events_endpoint(client, valid_request_data, db_session):

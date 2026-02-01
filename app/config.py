@@ -36,7 +36,7 @@ DATABASE_URL: str = os.getenv(
 )
 
 # Edge aggregation (frame_event -> window payload bridge)
-# EDGE_WINDOW_SIZE: number of frames per window (constant for this phase)
+# EDGE_WINDOW_SIZE: number of frames per window (default 30, ≈1 s at 30 fps)
 EDGE_WINDOW_SIZE: int = int(os.getenv("EDGE_WINDOW_SIZE", "30"))
 # EDGE_CAMERA_ID_DEFAULT: used when source.camera_id / header / query are missing
 EDGE_CAMERA_ID_DEFAULT: str = os.getenv("EDGE_CAMERA_ID_DEFAULT", "cam-1")

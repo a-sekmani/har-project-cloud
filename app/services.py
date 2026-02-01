@@ -2,8 +2,8 @@
 Service layer for database operations and inference pipeline.
 
 This module contains business logic functions for interacting with the database
-and for the inference + persist pipeline (infer_and_persist). All database
-operations and mock inference logic are centralized here.
+and for the inference + persist pipeline (infer_and_persist). Inference uses
+feature-based logic (extract_window_features + infer_activity) from Phase 4.
 """
 import math
 import time
@@ -12,13 +12,14 @@ from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.models import Device, ActivityEvent
+from app.features import extract_window_features
+from app.inference import infer_activity
 from app.schemas import (
     DebugInfoSchema,
     DebugPerPersonSchema,
     InferenceRequestSchema,
     InferenceResponseSchema,
     PersonResultSchema,
-    TopKItemSchema,
 )
 from datetime import datetime, UTC
 
@@ -69,39 +70,12 @@ def compute_input_quality(
     return k_count, avg_pose_conf, frames_ok_ratio
 
 
-def mock_inference_logic(pose_conf: float) -> Tuple[str, float, List[TopKItemSchema]]:
-    """
-    Mock inference logic for activity recognition.
-
-    Logic:
-    - If pose_conf < 0.4: Returns "unknown" activity with low confidence (0.2)
-    - If pose_conf >= 0.4: Returns "standing" activity with medium confidence (0.6)
-    """
-    if pose_conf < 0.4:
-        activity = "unknown"
-        confidence = 0.2
-        top_k = [
-            TopKItemSchema(label="unknown", score=0.2),
-            TopKItemSchema(label="standing", score=0.1),
-            TopKItemSchema(label="walking", score=0.1),
-        ]
-    else:
-        activity = "standing"
-        confidence = 0.6
-        top_k = [
-            TopKItemSchema(label="standing", score=0.6),
-            TopKItemSchema(label="walking", score=0.2),
-            TopKItemSchema(label="sitting", score=0.2),
-        ]
-    return activity, confidence, top_k
-
-
 def infer_and_persist(
     request: InferenceRequestSchema,
     db: Session,
 ) -> InferenceResponseSchema:
     """
-    Run inference (mock) and persist results to the database.
+    Run feature-based inference and persist results to the database.
     Single source of truth for inference + storage; used by both
     POST /v1/activity/infer and by the edge window-complete hook.
     """
@@ -119,14 +93,19 @@ def infer_and_persist(
         if k_count_request is None:
             k_count_request = k_count
 
+        quality = (k_count, avg_pose_conf, frames_ok_ratio)
+        features = extract_window_features(person.keypoints, request.window.fps)
+        activity, confidence, top_k, infer_debug = infer_activity(features, quality)
+
         per_person_debug.append(
             DebugPerPersonSchema(
                 avg_pose_conf=round(avg_pose_conf, 4),
                 frames_ok_ratio=round(frames_ok_ratio, 4),
+                features=infer_debug.get("features"),
+                thresholds=infer_debug.get("thresholds"),
             )
         )
 
-        activity, confidence, top_k = mock_inference_logic(person.pose_conf)
         results.append(
             PersonResultSchema(
                 track_id=person.track_id,

@@ -102,7 +102,7 @@ def test_infer_with_valid_request(client, valid_request_data):
     assert len(data["results"]) == 1
     assert data["results"][0]["track_id"] == 7
     assert data["results"][0]["activity"] == "standing"
-    assert data["results"][0]["confidence"] == 0.6
+    assert 0.3 <= data["results"][0]["confidence"] <= 0.9  # Phase 4: confidence from motion_energy
     assert len(data["results"][0]["top_k"]) >= 3
 
 
@@ -147,15 +147,20 @@ def test_infer_window_size_mismatch(client, valid_request_data):
 
 
 def test_infer_with_low_pose_conf(client, valid_request_data):
-    """Test that low pose_conf returns 'unknown' activity."""
-    valid_request_data["people"][0]["pose_conf"] = 0.3
-    
+    """Test that low keypoint confidence (mean_pose_conf) returns 'unknown' activity (Phase 4 quality gate)."""
+    # Phase 4 uses keypoints for quality; set all keypoint c to 0.05 so mean_pose_conf < 0.15
+    keypoints = valid_request_data["people"][0]["keypoints"]
+    for frame in keypoints:
+        for kp in frame:
+            kp[2] = 0.05
+    valid_request_data["people"][0]["pose_conf"] = 0.3  # request field; inference uses keypoints
+
     response = client.post(
         "/v1/activity/infer",
         json=valid_request_data,
         headers={"X-API-Key": API_KEY}
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["results"][0]["activity"] == "unknown"
