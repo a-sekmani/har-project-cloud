@@ -107,7 +107,12 @@ class ActivityEvent(Base):
     
     # Confidence score of the prediction (0.0 to 1.0)
     confidence = Column(Float, nullable=False)
-    
+
+    # Input quality (nullable for backward compatibility with existing rows)
+    k_count = Column(Integer, nullable=True)  # 17 or 25 keypoints
+    avg_pose_conf = Column(Float, nullable=True)  # average keypoint confidence
+    frames_ok_ratio = Column(Float, nullable=True)  # 0..1, ratio of frames without NaN/invalid conf
+
     # Timestamp when event was created
     # Indexed for fast sorting by creation time
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)

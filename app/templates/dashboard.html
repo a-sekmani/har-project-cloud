@@ -93,6 +93,9 @@
                     <th>Track ID</th>
                     <th>Activity</th>
                     <th>Confidence</th>
+                    <th>K</th>
+                    <th>Avg Pose Conf</th>
+                    <th>Frames OK Ratio</th>
                     <th>Window Size</th>
                     <th>FPS</th>
                 </tr>
@@ -114,12 +117,15 @@
                             {{ "%.2f"|format(event.confidence) }}
                         </span>
                     </td>
+                    <td>{{ event.k_count if event.k_count is not none else '—' }}</td>
+                    <td>{{ "%.2f"|format(event.avg_pose_conf) if event.avg_pose_conf is not none else '—' }}</td>
+                    <td>{{ "%.2f"|format(event.frames_ok_ratio) if event.frames_ok_ratio is not none else '—' }}</td>
                     <td>{{ event.window_size }}</td>
                     <td>{{ event.fps }}</td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" style="text-align: center; padding: 40px;">
+                    <td colspan="11" style="text-align: center; padding: 40px;">
                         No events found
                     </td>
                 </tr>

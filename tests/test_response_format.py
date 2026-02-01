@@ -98,7 +98,9 @@ def test_events_response_structure(client, valid_request_data, db_session):
     required_fields = [
         "id", "device_id", "camera_id", "track_id",
         "ts_start_ms", "ts_end_ms", "fps", "window_size",
-        "activity", "confidence", "created_at"
+        "activity", "confidence",
+        "k_count", "avg_pose_conf", "frames_ok_ratio",
+        "created_at"
     ]
     
     for field in required_fields:
@@ -148,7 +150,9 @@ def test_device_events_response_structure(client, valid_request_data, db_session
     required_fields = [
         "id", "device_id", "camera_id", "track_id",
         "ts_start_ms", "ts_end_ms", "fps", "window_size",
-        "activity", "confidence", "created_at"
+        "activity", "confidence",
+        "k_count", "avg_pose_conf", "frames_ok_ratio",
+        "created_at"
     ]
     
     for field in required_fields:
