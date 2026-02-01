@@ -203,7 +203,7 @@ Main inference endpoint. Accepts skeleton window data and returns activity predi
 
 ## Edge frame events (POST /v1/edge/events)
 
-Accepts frame-level events from the edge (`event_type: "frame_event"`). Frames are normalized and aggregated in memory per `(device_id, camera_id, track_id)`; when a buffer reaches the window size (default 30 frames), a Cloud window payload is built and logged (no DB, no inference call in this phase).
+Accepts frame-level events from the edge (`event_type: "frame_event"`). Frames are normalized and aggregated in memory per `(device_id, camera_id, track_id)`; when a buffer reaches the window size (default 30 frames), a Cloud window payload is built and logged. **Optionally**, when `EDGE_AUTO_INFER` is enabled, the same inference + persist logic as `/v1/activity/infer` runs automatically (no HTTP); results are saved to PostgreSQL and appear on the dashboard.
 
 **Headers:**
 - `X-API-Key`: Required (same as inference; 401 if missing or invalid)
@@ -219,10 +219,10 @@ Accepts frame-level events from the edge (`event_type: "frame_event"`). Frames a
 Full contract and examples: **[docs/EDGE_DATA_SHAPE.md](docs/EDGE_DATA_SHAPE.md)**
 
 **Debug endpoints** (require `X-API-Key`):
-- `GET /debug/buffers` — current aggregation buffers (key, frame_count, last_ts_ms) and `frame_events_received`
-- `GET /debug/windows?n=20` — last n completed windows (metadata only; `n` between 1 and 100)
+- `GET /debug/buffers` — current aggregation buffers (key, frame_count, last_ts_ms), `frame_events_received`, and `windows_infer_failed_db` (count of auto-infer failures due to DB)
+- `GET /debug/windows?n=20` — last n completed windows; each window includes `auto_infer_attempted`, `auto_infer_status` (ok | failed_db | failed_validation | disabled), and `saved` (`n` between 1 and 100)
 
-**Flow:** Edge sends `frame_event` → validated by `EdgeFrameEventSchema` → normalized to `InternalFrame` (COCO-17 order) → buffered per `(device_id, camera_id, track_id)` → when buffer reaches 30 frames, a window payload is built and logged (not stored, not sent to inference in this phase).
+**Flow:** Edge sends `frame_event` → validated by `EdgeFrameEventSchema` → normalized to `InternalFrame` (COCO-17 order) → buffered per `(device_id, camera_id, track_id)` → when buffer reaches 30 frames, a window payload is built. If **EDGE_AUTO_INFER** is true, `infer_and_persist` runs (same logic as `/v1/activity/infer`) and the event is saved to the database; otherwise only logging. If the database is unavailable during auto-infer, ingestion still returns 202 and the failure is logged and counted in `windows_infer_failed_db`.
 
 ## Data Retrieval Endpoints
 
@@ -354,6 +354,7 @@ pytest --cov=app --cov-report=term-missing
 - `DATABASE_URL`: PostgreSQL connection string (default: `postgresql+psycopg://cloudhar:cloudhar@localhost:5433/cloudhar`)
 - `EDGE_WINDOW_SIZE`: Frames per aggregation window (default: `30`)
 - `EDGE_CAMERA_ID_DEFAULT`: Default camera_id when not provided by edge (default: `cam-1`)
+- `EDGE_AUTO_INFER`: When `1`, `true`, or `yes`, run inference + persist when a 30-frame window completes (edge → DB); default: `0` (log only)
 
 **Note:** When using Docker Compose, `DATABASE_URL` is set to the postgres service; other defaults apply.
 

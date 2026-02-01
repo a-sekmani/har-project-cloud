@@ -19,31 +19,21 @@ Endpoints:
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader
-from typing import Tuple, Optional, List
+from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
-import time
 import uuid
 
 from app.config import API_KEY
 from app.database import get_db
-from app.schemas import (
-    DebugInfoSchema,
-    DebugPerPersonSchema,
-    InferenceRequestSchema,
-    InferenceResponseSchema,
-    PersonResultSchema,
-    TopKItemSchema,
-    WindowSchema
-)
+from app.schemas import InferenceRequestSchema, InferenceResponseSchema, WindowSchema
 from app.logging import log_inference_request, get_logger
 from app.health import router as health_router
 from app.services import (
-    compute_input_quality,
-    create_activity_event,
     get_all_devices,
     get_device_events,
     get_recent_events,
+    infer_and_persist,
     upsert_device,
 )
 from app.config import EDGE_CAMERA_ID_DEFAULT
@@ -56,6 +46,7 @@ from app.aggregation import (
 )
 from app.edge_schemas import EdgeFrameEventSchema
 from app.normalize import normalize_frame_event
+from app.window_pipeline import get_windows_infer_failed_db_count
 
 # Initialize FastAPI application
 app = FastAPI(title="Cloud HAR API", version="1.0.0")
@@ -122,48 +113,6 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")) -
     return x_api_key
 
 
-def mock_inference_logic(pose_conf: float) -> Tuple[str, float, list[TopKItemSchema]]:
-    """
-    Mock inference logic for activity recognition.
-    
-    This is a placeholder implementation that simulates ML model inference.
-    In production, this would be replaced with actual model inference.
-    
-    Logic:
-    - If pose_conf < 0.4: Returns "unknown" activity with low confidence (0.2)
-    - If pose_conf >= 0.4: Returns "standing" activity with medium confidence (0.6)
-    
-    Args:
-        pose_conf: Pose confidence score (0.0 to 1.0)
-    
-    Returns:
-        tuple: (activity, confidence, top_k)
-            - activity: Predicted activity label
-            - confidence: Confidence score for the prediction
-            - top_k: List of top K predictions with scores
-    """
-    if pose_conf < 0.4:
-        # Low pose confidence -> uncertain activity
-        activity = "unknown"
-        confidence = 0.2
-        top_k = [
-            TopKItemSchema(label="unknown", score=0.2),
-            TopKItemSchema(label="standing", score=0.1),
-            TopKItemSchema(label="walking", score=0.1),
-        ]
-    else:
-        # High pose confidence -> standing activity
-        activity = "standing"
-        confidence = 0.6
-        top_k = [
-            TopKItemSchema(label="standing", score=0.6),
-            TopKItemSchema(label="walking", score=0.2),
-            TopKItemSchema(label="sitting", score=0.2),
-        ]
-    
-    return activity, confidence, top_k
-
-
 @app.post("/v1/activity/infer", response_model=InferenceResponseSchema)
 async def infer_activity(
     request: InferenceRequestSchema,
@@ -171,105 +120,17 @@ async def infer_activity(
     db: Session = Depends(get_db)
 ) -> InferenceResponseSchema:
     """
-    Main inference endpoint for activity recognition.
-    
-    This endpoint receives skeleton window data from edge devices and returns
-    activity predictions. Each person in the request is processed separately,
-    and results are saved to the database.
-    
-    Process:
-    1. Validates API key (via dependency)
-    2. Generates unique request ID for logging
-    3. Upserts device record (creates if new, gets if exists)
-    4. Processes each person in the request:
-       - Runs mock inference logic
-       - Creates result object
-       - Saves event to database
-    5. Returns response with all predictions
-    
-    Args:
-        request: Inference request containing skeleton data and metadata
-        api_key: Validated API key (from dependency)
-        db: Database session (from dependency)
-    
-    Returns:
-        InferenceResponseSchema: Response containing predictions for all people
-    
-    Raises:
-        HTTPException: 401 if API key is invalid
-        HTTPException: 422 if request validation fails
+    Main inference endpoint. Validates API key and request, then delegates
+    to infer_and_persist (single source of truth for inference + storage).
     """
     request_id = str(uuid.uuid4())
-    start_time = time.perf_counter()
-
     with log_inference_request(
         device_id=request.device_id,
         camera_id=request.camera_id,
         num_people=len(request.people),
         request_id=request_id
     ):
-        upsert_device(db, request.device_id)
-
-        results = []
-        per_person_debug: List[DebugPerPersonSchema] = []
-        k_count_request: Optional[int] = None
-
-        for person in request.people:
-            k_count, avg_pose_conf, frames_ok_ratio = compute_input_quality(
-                person.keypoints, request.window.size
-            )
-            if k_count_request is None:
-                k_count_request = k_count
-
-            per_person_debug.append(
-                DebugPerPersonSchema(
-                    avg_pose_conf=round(avg_pose_conf, 4),
-                    frames_ok_ratio=round(frames_ok_ratio, 4),
-                )
-            )
-
-            activity, confidence, top_k = mock_inference_logic(person.pose_conf)
-            results.append(
-                PersonResultSchema(
-                    track_id=person.track_id,
-                    activity=activity,
-                    confidence=confidence,
-                    top_k=top_k
-                )
-            )
-
-            create_activity_event(
-                db=db,
-                device_id=request.device_id,
-                camera_id=request.camera_id,
-                track_id=person.track_id,
-                ts_start_ms=request.window.ts_start_ms,
-                ts_end_ms=request.window.ts_end_ms,
-                fps=request.window.fps,
-                window_size=request.window.size,
-                activity=activity,
-                confidence=confidence,
-                k_count=k_count,
-                avg_pose_conf=avg_pose_conf,
-                frames_ok_ratio=frames_ok_ratio,
-            )
-
-        latency_ms = int((time.perf_counter() - start_time) * 1000)
-        debug = DebugInfoSchema(
-            frames_received=request.window.size,
-            k_count=k_count_request or 0,
-            latency_ms=latency_ms,
-            per_person=per_person_debug,
-        )
-
-        return InferenceResponseSchema(
-            schema_version=1,
-            device_id=request.device_id,
-            camera_id=request.camera_id,
-            window=request.window,
-            results=results,
-            debug=debug,
-        )
+        return infer_and_persist(request, db)
 
 
 # ============================================================================
@@ -340,9 +201,13 @@ async def edge_events(
 async def debug_buffers(api_key: str = Depends(verify_api_key)):
     """
     Return current aggregation buffers: key (device_id|camera_id|track_id),
-    frame_count, last_ts_ms per buffer.
+    frame_count, last_ts_ms per buffer; and windows_infer_failed_db count.
     """
-    return {"buffers": get_buffer_details(), "frame_events_received": get_frame_events_received_count()}
+    return {
+        "buffers": get_buffer_details(),
+        "frame_events_received": get_frame_events_received_count(),
+        "windows_infer_failed_db": get_windows_infer_failed_db_count(),
+    }
 
 
 @app.get("/debug/windows")
