@@ -1,6 +1,6 @@
 # Cloud HAR - Human Activity Recognition API
 
-Cloud service for receiving skeleton data from edge devices and returning activity recognition results. It accepts **frame-level events** from the edge (`POST /v1/edge/events`), normalizes and aggregates them into windows in memory; it also accepts **window-level inference requests** (`POST /v1/activity/infer`) and returns feature-based activity predictions (standing / moving / unknown). Results are stored in PostgreSQL and can be viewed through a web dashboard.
+Cloud service for receiving skeleton data from edge devices and returning activity recognition results. It accepts **frame-level events** from the edge (`POST /v1/edge/events`), normalizes and aggregates them into windows in memory; it also accepts **window-level inference requests** (`POST /v1/activity/infer`) and returns feature-based activity predictions (standing / moving / unknown). Results are stored in PostgreSQL and can be viewed through a web dashboard. **Phase 5** adds a **pose windows store** (`pose_windows` table): every completed window (from edge or from `/v1/activity/infer`) is saved; activity events link to windows via `window_id`. You can **list and filter windows** (`GET /v1/windows`), **label them** (`POST /v1/windows/{id}/label` or the dashboard), and **export a dataset** (`scripts/export_dataset.py`).
 
 ## Requirements
 
@@ -32,9 +32,13 @@ har-project-cloud/
     templates/           # Jinja2 templates for dashboard
       dashboard.html
       device_dashboard.html
+      label.html         # Labeling page for pose windows
+  scripts/
+    export_dataset.py    # Export pose windows to JSONL or NPZ
+    clear_db.py         # Truncate devices, activity_events, pose_windows
   docs/
     EDGE_DATA_SHAPE.md   # Edge data contract and examples
-  tests/                 # Test suite (101 automated tests)
+  tests/                 # Test suite (112 automated tests)
     test_health.py
     test_infer_schema.py
     test_database.py
@@ -45,6 +49,7 @@ har-project-cloud/
     test_features.py         # extract_window_features unit tests
     test_inference_rules.py  # infer_activity (standing/moving/unknown) unit tests
     test_golden_edge.py
+    test_windows.py         # GET/POST /v1/windows, labeling API (Phase 5)
     test_multiple_people.py
     test_multiple_devices.py
     test_response_format.py
@@ -130,7 +135,7 @@ Health check endpoint for monitoring and load balancers.
 
 ### POST /v1/activity/infer
 
-Main inference endpoint. Accepts skeleton window data and returns activity predictions. Results are automatically saved to the database.
+Main inference endpoint. Accepts skeleton window data and returns activity predictions. Results are automatically saved to the database. When **STORE_INFER_WINDOWS** is enabled (default), one **PoseWindow** row is created per person and linked to the created **ActivityEvent** via `window_id`.
 
 **Headers:**
 - `X-API-Key`: Required (default value: `dev-key`)
@@ -228,6 +233,48 @@ Full contract and examples: **[docs/EDGE_DATA_SHAPE.md](docs/EDGE_DATA_SHAPE.md)
 
 **Flow:** Edge sends `frame_event` → validated by `EdgeFrameEventSchema` → normalized to `InternalFrame` (COCO-17 order) → buffered per `(device_id, camera_id, track_id)` → when buffer reaches the window size (default 30 frames), a window payload is built. If **EDGE_AUTO_INFER** is true, `infer_and_persist` runs (same logic as `/v1/activity/infer`) and the event is saved to the database; otherwise only logging. If the database is unavailable during auto-infer, ingestion still returns 202 and the failure is logged and counted in `windows_infer_failed_db`.
 
+## Windows API (Phase 5)
+
+All windows endpoints require **X-API-Key**.
+
+### GET /v1/windows
+
+List pose windows with optional filters. Keypoints are omitted by default; use `include_keypoints=1` to include them.
+
+**Query Parameters:** `device_id`, `session_id`, `camera_id`, `track_id`, `from` (ts_start_ms), `to` (ts_end_ms), `label`, `limit` (default 100), `include_keypoints` (0 or 1, default 0)
+
+**Example:**
+```bash
+curl -s "http://localhost:8000/v1/windows?limit=10" -H "X-API-Key: dev-key"
+```
+
+### GET /v1/windows/{window_id}
+
+Get a single pose window by ID. Keypoints are included by default; use `include_keypoints=0` to omit.
+
+**Example:**
+```bash
+curl -s "http://localhost:8000/v1/windows/{window_id}" -H "X-API-Key: dev-key"
+```
+
+### POST /v1/windows/{window_id}/label
+
+Set label and label_source for a pose window. Label must be one of **LABELS_ALLOWED** (default: `standing`, `moving`, `sitting`, `unknown`).
+
+**Request Body:**
+```json
+{ "label": "moving", "label_source": "manual" }
+```
+
+**Example:**
+```bash
+curl -s -X POST "http://localhost:8000/v1/windows/{window_id}/label" \
+  -H "Content-Type: application/json" -H "X-API-Key: dev-key" \
+  -d '{"label": "moving", "label_source": "manual"}'
+```
+
+Returns 404 if window not found; 422 if label is not in LABELS_ALLOWED.
+
 ## Data Retrieval Endpoints
 
 ### GET /v1/events
@@ -279,6 +326,16 @@ http://localhost:8000/dashboard
 - Auto-refresh every 3 seconds
 - Clickable device IDs to view device-specific events
 - Color-coded confidence levels
+- Link to **Label windows** page
+
+### Label Windows (Phase 5)
+
+Label pose windows from the dashboard:
+```
+http://localhost:8000/dashboard/label
+```
+
+Lists the last N pose windows with a dropdown to set label (standing, moving, sitting, unknown). Form submit updates the window and redirects back.
 
 ### Device Dashboard
 
@@ -292,9 +349,14 @@ http://localhost:8000/dashboard/devices/{device_id}
 http://localhost:8000/dashboard/devices/pi-001
 ```
 
+## Scripts
+
+- **scripts/export_dataset.py** — Export pose windows from the database to a file (JSONL or NPZ). Options: `--label`, `--labelled-only`, `--from-ts`, `--to-ts`, `--limit`, `--output`, `--format` (jsonl | npz). Example: `python scripts/export_dataset.py --labelled-only -o labelled.jsonl`
+- **scripts/clear_db.py** — Truncate all data in `activity_events`, `pose_windows`, and `devices` (schema unchanged). Example: `python scripts/clear_db.py` (uses `DATABASE_URL` from environment or config default).
+
 ## Testing
 
-The project includes **101 automated tests** covering:
+The project includes **112 automated tests** covering:
 - Health check endpoint
 - Request validation and feature-based inference
 - Database operations
@@ -309,6 +371,7 @@ The project includes **101 automated tests** covering:
 - Multiple devices and upsert behavior
 - Response format validation
 - End-to-end integration workflows
+- **Phase 5:** GET/POST /v1/windows, labeling API (valid/invalid/404), API key required, edge → PoseWindow + ActivityEvent.window_id
 
 ### Running Tests
 
@@ -330,6 +393,7 @@ pytest tests/test_normalize.py -v
 pytest tests/test_aggregation.py -v
 pytest tests/test_features.py -v
 pytest tests/test_inference_rules.py -v
+pytest tests/test_windows.py -v
 pytest tests/test_api_edge_cases.py -v
 
 # Run with coverage report
@@ -347,6 +411,7 @@ pytest --cov=app --cov-report=term-missing
 - `test_features.py`: `extract_window_features` unit tests (motion_energy, center_drift, missing_ratio)
 - `test_inference_rules.py`: `infer_activity` unit tests (standing / moving / unknown)
 - `test_golden_edge.py`: Golden edge payload and inference (standing / moving)
+- `test_windows.py`: GET/POST /v1/windows, labeling (Phase 5)
 - `test_api_edge_cases.py`: Edge cases and validation
 - `test_multiple_people.py`: Multiple people scenarios
 - `test_multiple_devices.py`: Multiple devices and upsert
@@ -365,6 +430,8 @@ pytest --cov=app --cov-report=term-missing
 - `EDGE_WINDOW_SIZE`: Frames per aggregation window (default: `30`, ≈1 s at 30 fps)
 - `EDGE_CAMERA_ID_DEFAULT`: Default camera_id when not provided by edge (default: `cam-1`)
 - `EDGE_AUTO_INFER`: When `1`, `true`, or `yes`, run inference + persist when a window completes (edge → DB; default window size 30 frames); default: `0` (log only)
+- **Phase 5:** `LABELS_ALLOWED`: Comma-separated list of allowed labels for window labeling (default: `standing,moving,sitting,unknown`)
+- **Phase 5:** `STORE_INFER_WINDOWS`: When `1`, `true`, or `yes`, save a PoseWindow per person on `POST /v1/activity/infer` and link activity_events via `window_id`; default: `1`
 
 **Note:** When using Docker Compose, `DATABASE_URL` is set to the postgres service; other defaults apply.
 
@@ -383,7 +450,8 @@ Each inference request is logged with:
 
 The application uses PostgreSQL to store:
 - **devices**: Registered edge devices (auto-created on first inference)
-- **activity_events**: Inference results with activity predictions
+- **activity_events**: Inference results with activity predictions; optional **window_id** (FK to pose_windows) when the event came from a stored window
+- **pose_windows** (Phase 5): Completed pose windows (keypoints [T][K][3]) from edge or infer; used for labeling and dataset export
 
 Database migrations are managed with Alembic and run automatically on Docker Compose startup. If the database is unavailable, the API returns **503** (and the dashboard shows a friendly error page) instead of 500.
 
@@ -416,3 +484,7 @@ Database migrations are managed with Alembic and run automatically on Docker Com
    ```
 
 6. **Test edge ingestion** (optional): Send a `frame_event` to `POST /v1/edge/events` with `X-API-Key: dev-key`, then check `GET /debug/buffers`. See [docs/EDGE_DATA_SHAPE.md](docs/EDGE_DATA_SHAPE.md) for the full payload format and examples.
+
+7. **List pose windows** (Phase 5): `curl -s "http://localhost:8000/v1/windows?limit=10" -H "X-API-Key: dev-key"`
+
+8. **Label windows** (Phase 5): Open `http://localhost:8000/dashboard/label` or use `POST /v1/windows/{window_id}/label` with `{"label": "standing", "label_source": "manual"}`.

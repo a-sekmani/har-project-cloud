@@ -10,7 +10,8 @@ from sqlalchemy.exc import OperationalError
 from app.config import EDGE_AUTO_INFER
 from app.database import SessionLocal
 from app.schemas import InferenceRequestSchema
-from app.services import infer_and_persist
+from app.services import create_pose_window, infer_and_persist
+from app.features import extract_window_features
 
 logger = logging.getLogger("cloud_har.window_pipeline")
 
@@ -47,11 +48,35 @@ def handle_completed_window(window_payload: Dict[str, Any]) -> Dict[str, Any]:
     db = SessionLocal()
     try:
         request = InferenceRequestSchema.model_validate(window_payload)
-        infer_and_persist(request, db)
+        # One PoseWindow per completed window (one person from edge)
+        person = request.people[0]
+        window = request.window
+        keypoints = person.keypoints
+        mean_pose_conf = person.pose_conf
+        features = extract_window_features(keypoints, window.fps)
+        missing_ratio = features.missing_ratio
+
+        pose_window = create_pose_window(
+            db=db,
+            device_id=request.device_id,
+            camera_id=request.camera_id,
+            session_id=request.session_id,
+            track_id=person.track_id,
+            ts_start_ms=window.ts_start_ms,
+            ts_end_ms=window.ts_end_ms,
+            fps=window.fps,
+            window_size=window.size,
+            coord_space="norm",
+            keypoints=keypoints,
+            mean_pose_conf=mean_pose_conf,
+            missing_ratio=missing_ratio,
+        )
+        infer_and_persist(request, db, window_id=pose_window.id)
         logger.info(
-            "window_pipeline | auto_infer ok | device_id=%s | track_id=%s",
+            "window_pipeline | auto_infer ok | device_id=%s | track_id=%s | window_id=%s",
             request.device_id,
-            request.people[0].track_id if request.people else None,
+            person.track_id,
+            pose_window.id,
         )
         return {
             "auto_infer_attempted": True,

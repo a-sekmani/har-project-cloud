@@ -42,3 +42,14 @@ EDGE_WINDOW_SIZE: int = int(os.getenv("EDGE_WINDOW_SIZE", "30"))
 EDGE_CAMERA_ID_DEFAULT: str = os.getenv("EDGE_CAMERA_ID_DEFAULT", "cam-1")
 # EDGE_AUTO_INFER: when True, run infer_and_persist on completed window (edge -> DB)
 EDGE_AUTO_INFER: bool = os.getenv("EDGE_AUTO_INFER", "0").lower() in ("1", "true", "yes")
+
+# Windows labeling (Phase 5)
+# LABELS_ALLOWED: comma-separated or list; default standing, moving, sitting, unknown
+_labels_raw = os.getenv("LABELS_ALLOWED", "standing,moving,sitting,unknown")
+LABELS_ALLOWED: list = (
+    [x.strip() for x in _labels_raw.split(",") if x.strip()]
+    if isinstance(_labels_raw, str)
+    else list(_labels_raw)
+)
+# STORE_INFER_WINDOWS: when True, save PoseWindow on POST /v1/activity/infer
+STORE_INFER_WINDOWS: bool = os.getenv("STORE_INFER_WINDOWS", "1").lower() in ("1", "true", "yes")

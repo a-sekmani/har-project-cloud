@@ -7,11 +7,12 @@ feature-based logic (extract_window_features + infer_activity) from Phase 4.
 """
 import math
 import time
+import uuid
 from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from app.models import Device, ActivityEvent
+from app.models import Device, ActivityEvent, PoseWindow
 from app.features import extract_window_features
 from app.inference import infer_activity
 from app.schemas import (
@@ -70,14 +71,56 @@ def compute_input_quality(
     return k_count, avg_pose_conf, frames_ok_ratio
 
 
+def create_pose_window(
+    db: Session,
+    device_id: str,
+    camera_id: str,
+    session_id: Optional[str],
+    track_id: int,
+    ts_start_ms: int,
+    ts_end_ms: int,
+    fps: float,
+    window_size: int,
+    coord_space: str,
+    keypoints: List[List[List[float]]],
+    mean_pose_conf: Optional[float],
+    missing_ratio: Optional[float] = None,
+) -> PoseWindow:
+    """
+    Create one PoseWindow row. keypoints stored as JSON (list of lists).
+    Returns the created PoseWindow with id.
+    """
+    row = PoseWindow(
+        device_id=device_id,
+        camera_id=camera_id,
+        session_id=session_id,
+        track_id=track_id,
+        ts_start_ms=ts_start_ms,
+        ts_end_ms=ts_end_ms,
+        fps=float(fps),
+        window_size=window_size,
+        coord_space=coord_space,
+        keypoints=keypoints,
+        mean_pose_conf=mean_pose_conf,
+        missing_ratio=missing_ratio,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def infer_and_persist(
     request: InferenceRequestSchema,
     db: Session,
+    window_id: Optional[str] = None,
+    window_ids: Optional[List[Optional[str]]] = None,
 ) -> InferenceResponseSchema:
     """
     Run feature-based inference and persist results to the database.
     Single source of truth for inference + storage; used by both
     POST /v1/activity/infer and by the edge window-complete hook.
+    window_id: single id (edge path, one person). window_ids: one per person (infer path).
     """
     start_time = time.perf_counter()
     upsert_device(db, request.device_id)
@@ -86,7 +129,7 @@ def infer_and_persist(
     per_person_debug: List[DebugPerPersonSchema] = []
     k_count_request: Optional[int] = None
 
-    for person in request.people:
+    for i, person in enumerate(request.people):
         k_count, avg_pose_conf, frames_ok_ratio = compute_input_quality(
             person.keypoints, request.window.size
         )
@@ -115,6 +158,7 @@ def infer_and_persist(
             )
         )
 
+        person_window_id = (window_ids[i] if window_ids and i < len(window_ids) else None) or window_id
         create_activity_event(
             db=db,
             device_id=request.device_id,
@@ -129,6 +173,7 @@ def infer_and_persist(
             k_count=k_count,
             avg_pose_conf=avg_pose_conf,
             frames_ok_ratio=frames_ok_ratio,
+            window_id=person_window_id,
         )
 
     latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -192,6 +237,7 @@ def create_activity_event(
     k_count: Optional[int] = None,
     avg_pose_conf: Optional[float] = None,
     frames_ok_ratio: Optional[float] = None,
+    window_id: Optional[str] = None,
 ) -> ActivityEvent:
     """
     Create a new activity event record in the database.
@@ -213,11 +259,12 @@ def create_activity_event(
         k_count: Number of keypoints (17 or 25), optional
         avg_pose_conf: Average keypoint confidence for input quality, optional
         frames_ok_ratio: Ratio of valid frames (0..1), optional
+        window_id: Optional UUID of the pose window that produced this event
 
     Returns:
         ActivityEvent: The created event object
     """
-    event = ActivityEvent(
+    event_kw: dict = dict(
         device_id=device_id,
         camera_id=camera_id,
         track_id=track_id,
@@ -230,8 +277,11 @@ def create_activity_event(
         k_count=k_count,
         avg_pose_conf=avg_pose_conf,
         frames_ok_ratio=frames_ok_ratio,
-        created_at=datetime.now(UTC)
+        created_at=datetime.now(UTC),
     )
+    if window_id is not None:
+        event_kw["window_id"] = window_id if isinstance(window_id, uuid.UUID) else uuid.UUID(str(window_id))
+    event = ActivityEvent(**event_kw)
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -292,3 +342,85 @@ def get_all_devices(db: Session):
         List[Device]: List of all device objects
     """
     return db.query(Device).all()
+
+
+def get_windows(
+    db: Session,
+    device_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    camera_id: Optional[str] = None,
+    track_id: Optional[int] = None,
+    ts_from_ms: Optional[int] = None,
+    ts_to_ms: Optional[int] = None,
+    label: Optional[str] = None,
+    limit: int = 100,
+) -> List[PoseWindow]:
+    """
+    Query pose windows with optional filters. Returns metadata (caller may omit keypoints).
+    """
+    q = db.query(PoseWindow)
+    if device_id is not None:
+        q = q.filter(PoseWindow.device_id == device_id)
+    if session_id is not None:
+        q = q.filter(PoseWindow.session_id == session_id)
+    if camera_id is not None:
+        q = q.filter(PoseWindow.camera_id == camera_id)
+    if track_id is not None:
+        q = q.filter(PoseWindow.track_id == track_id)
+    if ts_from_ms is not None:
+        q = q.filter(PoseWindow.ts_start_ms >= ts_from_ms)
+    if ts_to_ms is not None:
+        q = q.filter(PoseWindow.ts_end_ms <= ts_to_ms)
+    if label is not None:
+        q = q.filter(PoseWindow.label == label)
+    q = q.order_by(desc(PoseWindow.created_at)).limit(limit)
+    return q.all()
+
+
+def get_window_by_id(db: Session, window_id: uuid.UUID) -> Optional[PoseWindow]:
+    """Return a single PoseWindow by id, or None if not found."""
+    return db.query(PoseWindow).filter(PoseWindow.id == window_id).first()
+
+
+def update_window_label(
+    db: Session,
+    window_id: uuid.UUID,
+    label: str,
+    label_source: str,
+) -> Optional[PoseWindow]:
+    """
+    Update PoseWindow label, label_source, labeled_at. Returns updated row or None if not found.
+    """
+    # #region agent log
+    _debug_log = "/Users/ahmadsekmani/Desktop/Projects/har-project-cloud/.cursor/debug.log"
+    def _dlog(hypothesis_id: str, message: str, **data):
+        try:
+            import json
+            import time
+            import logging
+            with open(_debug_log, "a") as f:
+                f.write(json.dumps({"hypothesisId": hypothesis_id, "message": message, "data": data, "timestamp": int(time.time() * 1000), "location": "services.update_window_label"}, default=str) + "\n")
+        except Exception:
+            pass
+        logging.getLogger("cloud_har.services").error("DEBUG [%s] %s | %s", hypothesis_id, message, data)
+    # #endregion
+    _dlog("H2", "entry", window_id_str=str(window_id), label_repr=repr(label)[:50])
+    row = db.query(PoseWindow).filter(PoseWindow.id == window_id).first()
+    _dlog("H2", "row fetch", row_is_none=row is None)
+    if row is None:
+        return None
+    _dlog("H5", "before assign labeled_at")
+    row.label = label
+    row.label_source = label_source
+    row.labeled_at = datetime.now(UTC)
+    _dlog("H2", "before commit")
+    db.commit()
+    _dlog("H2", "after commit")
+    try:
+        db.refresh(row)
+        _dlog("H2", "after refresh")
+    except Exception as refresh_err:
+        _dlog("H2", "refresh failed", exc_type=type(refresh_err).__name__, exc_msg=str(refresh_err)[:200])
+        # Refresh can fail with some drivers/relationships; row is already updated in memory
+        pass
+    return row

@@ -15,6 +15,7 @@ class InternalFrame:
     """Single frame for one person after normalization (cloud-internal format)."""
     device_id: str
     camera_id: str
+    session_id: str  # from edge; empty for infer-originated
     track_id: int
     ts_ms: int
     keypoints_17x3: List[List[float]]  # 17 rows in COCO-17 order, each [x, y, c]
@@ -46,6 +47,7 @@ def normalize_frame_event(body: dict, camera_id: str) -> List[InternalFrame]:
     persons = body.get("persons", [])
 
     device_id = source.get("device_id", "")
+    session_id = source.get("session_id", "")
     ts_unix_ms = frame.get("ts_unix_ms", 0)
     ts_ms = int(ts_unix_ms)
 
@@ -70,6 +72,7 @@ def normalize_frame_event(body: dict, camera_id: str) -> List[InternalFrame]:
             InternalFrame(
                 device_id=device_id,
                 camera_id=camera_id,
+                session_id=session_id,
                 track_id=int(person.get("track_id", 0)),
                 ts_ms=ts_ms,
                 keypoints_17x3=keypoints_17x3,
