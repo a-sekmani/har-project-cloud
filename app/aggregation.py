@@ -18,7 +18,7 @@ from app.window_pipeline import handle_completed_window, reset_windows_infer_fai
 logger = logging.getLogger("cloud_har.aggregation")
 
 # In-memory: key = (device_id, camera_id, track_id), value = list of frame entries
-# Each frame entry: {"ts_unix_ms": int, "keypoints": [[x,y,c], ... 17]}
+# Each frame entry: {"ts_unix_ms": int, "keypoints": [[x,y,c], ... 17], "session_id": str}
 _buffers: Dict[Tuple[str, str, int], List[Dict[str, Any]]] = {}
 
 # Count of frame_events received (for logging)
@@ -65,6 +65,7 @@ def _normalize_keypoints(keypoints: List[List[float]]) -> List[List[float]]:
 def _validate_and_build_window(
     device_id: str,
     camera_id: str,
+    session_id: str,
     track_id: int,
     frames: List[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
@@ -137,6 +138,7 @@ def _validate_and_build_window(
         "schema_version": 1,
         "device_id": device_id,
         "camera_id": camera_id,
+        "session_id": session_id or None,
         "window": {
             "ts_start_ms": ts_start_ms,
             "ts_end_ms": ts_end_ms,
@@ -219,14 +221,16 @@ def ingest_internal_frame(iframe: InternalFrame) -> List[Dict[str, Any]]:
     buf.append({
         "ts_unix_ms": ts_ms,
         "keypoints": [list(row) for row in keypoints_17x3],
+        "session_id": getattr(iframe, "session_id", "") or "",
     })
 
     completed_windows: List[Dict[str, Any]] = []
     if len(buf) >= EDGE_WINDOW_SIZE:
         frames = buf[:EDGE_WINDOW_SIZE]
         _buffers[key] = buf[EDGE_WINDOW_SIZE:]
+        session_id = frames[0].get("session_id", "") if frames else ""
         window_payload = _validate_and_build_window(
-            device_id, camera_id, track_id, frames
+            device_id, camera_id, session_id, track_id, frames
         )
         if window_payload:
             completed_windows.append(window_payload)

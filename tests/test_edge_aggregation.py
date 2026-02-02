@@ -449,9 +449,9 @@ def test_auto_infer_disabled(client):
 
 
 def test_auto_infer_enabled_event_saved(client):
-    """With EDGE_AUTO_INFER=True, completing a window creates an ActivityEvent (standing)."""
+    """With EDGE_AUTO_INFER=True, completing a window creates PoseWindow and ActivityEvent with window_id."""
     from app.database import SessionLocal, engine, Base
-    from app.models import ActivityEvent
+    from app.models import ActivityEvent, PoseWindow
     import app.window_pipeline as wp
 
     Base.metadata.create_all(bind=engine)
@@ -473,12 +473,18 @@ def test_auto_infer_enabled_event_saved(client):
         assert windows[0]["saved"] is True
         db = SessionLocal()
         try:
+            pose_windows = db.query(PoseWindow).filter(
+                PoseWindow.device_id == "auto-infer-dev"
+            ).all()
+            assert len(pose_windows) >= 1
             events = db.query(ActivityEvent).filter(
                 ActivityEvent.device_id == "auto-infer-dev"
             ).all()
             assert len(events) >= 1
             assert events[0].activity == "standing"
             assert 0.3 <= events[0].confidence <= 0.9  # Phase 4: confidence from motion_energy
+            assert events[0].window_id is not None
+            assert events[0].window_id == pose_windows[0].id
         finally:
             db.close()
     finally:
@@ -533,7 +539,7 @@ def test_db_failure_does_not_break_ingestion(client):
     from sqlalchemy.exc import OperationalError
     import app.window_pipeline as wp
 
-    def failing_infer(_request, _db):
+    def failing_infer(_request, _db, **kwargs):
         raise OperationalError("", "", "connection refused")
 
     original_infer = wp.infer_and_persist

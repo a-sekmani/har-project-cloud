@@ -63,6 +63,7 @@ class InferenceRequestSchema(BaseModel):
     schema_version: int = Field(...)
     device_id: str
     camera_id: str
+    session_id: Optional[str] = None  # from edge; null for infer-originated
     window: WindowSchema
     people: List[PersonSchema] = Field(..., min_length=1)
     
@@ -125,3 +126,9 @@ class InferenceResponseSchema(BaseModel):
     window: WindowSchema
     results: List[PersonResultSchema]
     debug: DebugInfoSchema
+
+
+class WindowLabelSchema(BaseModel):
+    """Body for POST /v1/windows/{window_id}/label."""
+    label: str
+    label_source: str = "manual"  # "manual" | "import" | "auto"

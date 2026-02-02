@@ -17,23 +17,29 @@ Endpoints:
 - GET /dashboard/devices/{device_id}: Device-specific dashboard
 """
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
+import json
+import time
 import uuid
 
-from app.config import API_KEY
+from app.config import API_KEY, LABELS_ALLOWED, STORE_INFER_WINDOWS
 from app.database import get_db
-from app.schemas import InferenceRequestSchema, InferenceResponseSchema, WindowSchema
+from app.schemas import InferenceRequestSchema, InferenceResponseSchema, WindowSchema, WindowLabelSchema
 from app.logging import log_inference_request, get_logger
 from app.health import router as health_router
 from app.services import (
+    create_pose_window,
     get_all_devices,
     get_device_events,
     get_recent_events,
+    get_window_by_id,
+    get_windows,
     infer_and_persist,
+    update_window_label,
     upsert_device,
 )
 from app.config import EDGE_CAMERA_ID_DEFAULT
@@ -45,6 +51,8 @@ from app.aggregation import (
     ingest_internal_frame,
 )
 from app.edge_schemas import EdgeFrameEventSchema
+from app.features import extract_window_features
+from app.models import PoseWindow
 from app.normalize import normalize_frame_event
 from app.window_pipeline import get_windows_infer_failed_db_count
 
@@ -122,6 +130,7 @@ async def infer_activity(
     """
     Main inference endpoint. Validates API key and request, then delegates
     to infer_and_persist (single source of truth for inference + storage).
+    If STORE_INFER_WINDOWS, creates one PoseWindow per person (session_id null) then infers.
     """
     request_id = str(uuid.uuid4())
     with log_inference_request(
@@ -130,6 +139,28 @@ async def infer_activity(
         num_people=len(request.people),
         request_id=request_id
     ):
+        window_ids = None
+        if STORE_INFER_WINDOWS and request.people:
+            window_ids = []
+            for person in request.people:
+                features = extract_window_features(person.keypoints, request.window.fps)
+                pw = create_pose_window(
+                    db=db,
+                    device_id=request.device_id,
+                    camera_id=request.camera_id,
+                    session_id=request.session_id,
+                    track_id=person.track_id,
+                    ts_start_ms=request.window.ts_start_ms,
+                    ts_end_ms=request.window.ts_end_ms,
+                    fps=request.window.fps,
+                    window_size=request.window.size,
+                    coord_space="norm",
+                    keypoints=person.keypoints,
+                    mean_pose_conf=person.pose_conf,
+                    missing_ratio=features.missing_ratio,
+                )
+                window_ids.append(str(pw.id))
+            return infer_and_persist(request, db, window_ids=window_ids)
         return infer_and_persist(request, db)
 
 
@@ -220,6 +251,112 @@ async def debug_windows(
     ts_start_ms, ts_end_ms, size, fps). No full keypoints.
     """
     return {"windows": get_last_windows(n)}
+
+
+# ============================================================================
+# Windows API (Phase 5: store, list, label)
+# ============================================================================
+
+def _pose_window_to_item(w: PoseWindow, include_keypoints: bool = False) -> dict:
+    """Build response dict for one PoseWindow. Ensures JSON-serializable types (e.g. Decimal -> float)."""
+    def _dt_iso(v):
+        if v is None:
+            return None
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+        return str(v)
+
+    item = {
+        "id": str(w.id),
+        "device_id": w.device_id,
+        "camera_id": w.camera_id,
+        "session_id": w.session_id,
+        "track_id": int(w.track_id),
+        "ts_start_ms": int(w.ts_start_ms),
+        "ts_end_ms": int(w.ts_end_ms),
+        "fps": float(w.fps) if w.fps is not None else None,
+        "window_size": int(w.window_size),
+        "mean_pose_conf": float(w.mean_pose_conf) if w.mean_pose_conf is not None else None,
+        "label": w.label,
+        "label_source": w.label_source,
+        "created_at": _dt_iso(w.created_at),
+    }
+    if w.labeled_at is not None:
+        item["labeled_at"] = _dt_iso(w.labeled_at)
+    if include_keypoints and w.keypoints is not None:
+        item["keypoints"] = w.keypoints
+    return item
+
+
+@app.get("/v1/windows")
+async def list_windows(
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+    device_id: Optional[str] = Query(None),
+    session_id: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    track_id: Optional[int] = Query(None),
+    from_ts: Optional[int] = Query(None, alias="from"),
+    to_ts: Optional[int] = Query(None, alias="to"),
+    label: Optional[str] = Query(None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    include_keypoints: int = Query(default=0, ge=0, le=1),
+):
+    """
+    List pose windows with optional filters. By default keypoints are omitted.
+    Use include_keypoints=1 to include keypoints in each item.
+    """
+    windows = get_windows(
+        db,
+        device_id=device_id,
+        session_id=session_id,
+        camera_id=camera_id,
+        track_id=track_id,
+        ts_from_ms=from_ts,
+        ts_to_ms=to_ts,
+        label=label,
+        limit=limit,
+    )
+    return {
+        "windows": [_pose_window_to_item(w, include_keypoints=(include_keypoints == 1)) for w in windows]
+    }
+
+
+@app.get("/v1/windows/{window_id}")
+async def get_window(
+    window_id: uuid.UUID,
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+    include_keypoints: int = Query(default=1, ge=0, le=1),
+):
+    """
+    Return a single pose window by id. Keypoints included by default; use include_keypoints=0 to omit.
+    """
+    w = get_window_by_id(db, window_id)
+    if w is None:
+        raise HTTPException(status_code=404, detail="Window not found")
+    return _pose_window_to_item(w, include_keypoints=(include_keypoints == 1))
+
+
+@app.post("/v1/windows/{window_id}/label")
+async def label_window(
+    window_id: uuid.UUID,
+    body: WindowLabelSchema,
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Set label and label_source for a pose window. Label must be in LABELS_ALLOWED.
+    """
+    if body.label not in LABELS_ALLOWED:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Label must be one of: {LABELS_ALLOWED}",
+        )
+    w = update_window_label(db, window_id, body.label, body.label_source)
+    if w is None:
+        raise HTTPException(status_code=404, detail="Window not found")
+    return _pose_window_to_item(w, include_keypoints=False)
 
 
 # ============================================================================
@@ -407,3 +544,99 @@ async def device_dashboard(
         events=events,
         limit=limit
     ))
+
+
+@app.get("/dashboard/label", response_class=HTMLResponse)
+async def dashboard_label(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Labeling page: list last N pose windows with dropdown to set label."""
+    # #region agent log
+    _debug_log = "/Users/ahmadsekmani/Desktop/Projects/har-project-cloud/.cursor/debug.log"
+    def _dlog(hypothesis_id: str, message: str, **data):
+        try:
+            with open(_debug_log, "a") as f:
+                f.write(json.dumps({"hypothesisId": hypothesis_id, "message": message, "data": data, "timestamp": int(time.time() * 1000), "location": "main.dashboard_label_GET"}, default=str) + "\n")
+        except Exception:
+            pass
+        logger.error("DEBUG [%s] %s | %s", hypothesis_id, message, data)
+    # #endregion
+    try:
+        _dlog("H_GET", "entry")
+        rows = get_windows(db, limit=limit)
+        _dlog("H_GET", "get_windows done", rows_len=len(rows))
+        windows = []
+        for w in rows:
+            windows.append({
+                "id": str(w.id),
+                "device_id": str(w.device_id) if w.device_id is not None else "",
+                "camera_id": str(w.camera_id) if w.camera_id is not None else "",
+                "track_id": int(w.track_id),
+                "ts_start_ms": int(w.ts_start_ms),
+                "ts_end_ms": int(w.ts_end_ms),
+                "label": str(w.label) if w.label is not None else None,
+            })
+        _dlog("H_GET", "windows built", windows_len=len(windows))
+        template = jinja_env.get_template("label.html")
+        out = template.render(windows=windows, limit=limit, labels_allowed=LABELS_ALLOWED)
+        _dlog("H_GET", "render done")
+        return HTMLResponse(content=out)
+    except Exception as e:
+        _dlog("H_GET", "exception", exc_type=type(e).__name__, exc_msg=str(e)[:300])
+        raise
+
+
+@app.post("/dashboard/label", response_class=HTMLResponse)
+async def dashboard_label_submit(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Form submit: set label for a window then redirect to label page."""
+    # #region agent log
+    _debug_log = "/Users/ahmadsekmani/Desktop/Projects/har-project-cloud/.cursor/debug.log"
+    def _dlog(hypothesis_id: str, message: str, **data):
+        try:
+            with open(_debug_log, "a") as f:
+                f.write(json.dumps({"hypothesisId": hypothesis_id, "message": message, "data": data, "timestamp": int(time.time() * 1000), "location": "main.dashboard_label_submit"}, default=str) + "\n")
+        except Exception:
+            pass
+        logger.error("DEBUG [%s] %s | %s", hypothesis_id, message, data)
+    # #endregion
+    try:
+        form = await request.form()
+        window_id_s = form.get("window_id")
+        label = form.get("label")
+        _dlog("H1", "form raw", window_id_s_type=type(window_id_s).__name__, label_type=type(label).__name__, form_keys=list(form.keys()) if hasattr(form, "keys") else None)
+        # Coerce to str (form can sometimes return list for multi-value keys)
+        if isinstance(window_id_s, list):
+            window_id_s = window_id_s[0] if window_id_s else ""
+        window_id_s = (window_id_s or "").strip() if window_id_s is not None else ""
+        if isinstance(label, list):
+            label = label[0] if label else ""
+        label = (label or "").strip() if label is not None else ""
+        _dlog("H1", "after coercion", window_id_s_len=len(window_id_s), label_repr=repr(label)[:80])
+        if not window_id_s:
+            raise HTTPException(status_code=400, detail="window_id required")
+        if label and label not in LABELS_ALLOWED:
+            raise HTTPException(status_code=422, detail=f"Label must be one of: {LABELS_ALLOWED}")
+        try:
+            window_id = uuid.UUID(window_id_s)
+        except (ValueError, TypeError) as ue:
+            _dlog("H3", "UUID parse failed", error=type(ue).__name__, msg=str(ue)[:100])
+            raise HTTPException(status_code=400, detail="Invalid window_id")
+        _dlog("H2", "before update_window_label", window_id_str=str(window_id))
+        w = update_window_label(db, window_id, label, "manual")
+        _dlog("H2", "after update_window_label", w_is_none=w is None, w_id=str(w.id) if w else None)
+        if w is None:
+            raise HTTPException(status_code=404, detail="Window not found")
+        return RedirectResponse(url="/dashboard/label", status_code=303)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _dlog("H4", "exception caught", exc_type=type(e).__name__, exc_msg=str(e)[:200])
+        logger.exception("dashboard_label_submit failed: %s", e)
+        return HTMLResponse(
+            content=f"<html><body><h1>Error</h1><p>{type(e).__name__}: {e}</p><p><a href='/dashboard/label'>Back to label page</a></p></body></html>",
+            status_code=500,
+        )

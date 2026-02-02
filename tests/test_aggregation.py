@@ -28,12 +28,13 @@ def _make_keypoints_17():
     return [[10.0 + i, 20.0 + i, 0.9] for i in range(17)]
 
 
-def _internal_frame(device_id="d1", camera_id="cam-1", track_id=0, ts_ms=1000000, keypoints=None):
+def _internal_frame(device_id="d1", camera_id="cam-1", session_id="", track_id=0, ts_ms=1000000, keypoints=None):
     if keypoints is None:
         keypoints = _make_keypoints_17()
     return InternalFrame(
         device_id=device_id,
         camera_id=camera_id,
+        session_id=session_id,
         track_id=track_id,
         ts_ms=ts_ms,
         keypoints_17x3=keypoints,
