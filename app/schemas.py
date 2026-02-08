@@ -1,5 +1,5 @@
 """Pydantic schemas for request/response validation."""
-from typing import Any, Dict, List, Optional
+from typing import List
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -30,8 +30,7 @@ class PersonSchema(BaseModel):
         if not self.keypoints:
             raise ValueError("keypoints cannot be empty")
         
-        # Check that all frames have the same number of keypoints.
-        # K=17: edge device format; K=25: NTU format (e.g. for training).
+        # Check that all frames have the same number of keypoints
         num_keypoints = len(self.keypoints[0])
         if num_keypoints not in [17, 25]:
             raise ValueError(f"Number of keypoints per frame must be 17 or 25, got {num_keypoints}")
@@ -63,7 +62,6 @@ class InferenceRequestSchema(BaseModel):
     schema_version: int = Field(...)
     device_id: str
     camera_id: str
-    session_id: Optional[str] = None  # from edge; null for infer-originated
     window: WindowSchema
     people: List[PersonSchema] = Field(..., min_length=1)
     
@@ -102,22 +100,6 @@ class PersonResultSchema(BaseModel):
     top_k: List[TopKItemSchema] = Field(..., min_length=3)
 
 
-class DebugPerPersonSchema(BaseModel):
-    """Debug metrics for one person (input quality + optional feature-based debug)."""
-    avg_pose_conf: float = Field(ge=0.0, le=1.0)
-    frames_ok_ratio: float = Field(ge=0.0, le=1.0)
-    features: Optional[Dict[str, Any]] = None  # motion_energy, missing_ratio, mean_pose_conf
-    thresholds: Optional[Dict[str, float]] = None  # TH_STILL, TH_MOVE
-
-
-class DebugInfoSchema(BaseModel):
-    """Debug/diagnostic info returned with inference response."""
-    frames_received: int = Field(ge=0)
-    k_count: int = Field(ge=0)
-    latency_ms: int = Field(ge=0)
-    per_person: List[DebugPerPersonSchema] = Field(..., min_length=1)
-
-
 class InferenceResponseSchema(BaseModel):
     """Response schema for activity inference."""
     schema_version: int = Field(default=1)
@@ -125,10 +107,3 @@ class InferenceResponseSchema(BaseModel):
     camera_id: str
     window: WindowSchema
     results: List[PersonResultSchema]
-    debug: DebugInfoSchema
-
-
-class WindowLabelSchema(BaseModel):
-    """Body for POST /v1/windows/{window_id}/label."""
-    label: str
-    label_source: str = "manual"  # "manual" | "import" | "auto"
