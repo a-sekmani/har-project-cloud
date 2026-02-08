@@ -1,0 +1,39 @@
+{
+  "label_to_id": {
+    "A001": 0,
+    "A002": 1,
+    "A008": 2,
+    "A009": 3,
+    "A011": 4,
+    "A043": 5,
+    "A044": 6,
+    "A045": 7,
+    "A046": 8,
+    "A048": 9
+  },
+  "id_to_name": {
+    "0": "drink_water",
+    "1": "eat_meal",
+    "2": "sit_down",
+    "3": "stand_up",
+    "4": "reading",
+    "5": "falling_down",
+    "6": "headache",
+    "7": "chest_pain",
+    "8": "back_pain",
+    "9": "nausea_vomiting"
+  },
+  "label_names": {
+    "A011": "reading",
+    "A001": "drink_water",
+    "A002": "eat_meal",
+    "A043": "falling_down",
+    "A044": "headache",
+    "A045": "chest_pain",
+    "A046": "back_pain",
+    "A048": "nausea_vomiting",
+    "A008": "sit_down",
+    "A009": "stand_up"
+  },
+  "num_classes": 10
+}

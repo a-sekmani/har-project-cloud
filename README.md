@@ -29,6 +29,7 @@ har-project-cloud/
     features.py          # Temporal features (motion_energy, center_drift, missing_ratio)
     inference.py         # Feature-based activity inference (standing / moving / unknown)
     window_pipeline.py   # Window completion hook: auto-infer on completed window
+    ml/                  # Phase 6: ONNX inference (registry, features, onnx_runner)
     templates/           # Jinja2 templates for dashboard
       dashboard.html
       device_dashboard.html
@@ -38,7 +39,7 @@ har-project-cloud/
     clear_db.py         # Truncate devices, activity_events, pose_windows
   docs/
     EDGE_DATA_SHAPE.md   # Edge data contract and examples
-  tests/                 # Test suite (112 automated tests)
+  tests/                 # Test suite (112+ tests, including Phase 6 ML and predict)
     test_health.py
     test_infer_schema.py
     test_database.py
@@ -50,12 +51,16 @@ har-project-cloud/
     test_inference_rules.py  # infer_activity (standing/moving/unknown) unit tests
     test_golden_edge.py
     test_windows.py         # GET/POST /v1/windows, labeling API (Phase 5)
+    test_ml_features.py    # Phase 6 ML feature extraction (vel, norm, raw)
+    test_ml_registry.py    # Phase 6 model registry (load, label_map)
+    test_predict.py        # Phase 6 POST /v1/windows/{id}/predict, POST /v1/predict
     test_multiple_people.py
     test_multiple_devices.py
     test_response_format.py
     test_integration.py
     fixtures/
       golden_edge_payload.json
+  models/               # ONNX model dir (e.g. models/<model_key>/model.onnx, label_map.json, model_meta.json)
   alembic/              # Database migrations
   Dockerfile
   docker-compose.yml
@@ -118,6 +123,26 @@ alembic upgrade head
 
 # Run the server
 uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Phase 6: Running with ONNX
+
+To use ML-based prediction (POST /v1/windows/{id}/predict and POST /v1/predict), place an exported HAR-WindowNet model under the `models/` directory. Default path is `./models` (override with `MODELS_DIR`). Each model lives in a subdirectory named by `model_key` (e.g. `models/custom10_tcn_v1_vel/`) with `model.onnx`, `label_map.json`, and `model_meta.json`. Set `MODEL_KEY_DEFAULT` to the key of the model to use when no `model_key` is provided in the request. See `models/README.md` for the expected layout.
+
+**Smoke test (after placing a model in `models/<model_key>/`):**
+```bash
+# Start API (and Postgres if needed)
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Create a window (e.g. via POST /v1/activity/infer or edge), then get its id from GET /v1/windows
+curl -s -X GET "http://localhost:8000/v1/windows?limit=1" -H "X-API-Key: dev-key" | jq '.windows[0].id'
+
+# Predict by window id (replace WINDOW_ID)
+curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" \
+  -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
+  -d '{"store": true, "return_probs": true}' | jq .
+
+# Check DB: window_predictions should have one row for that window_id
 ```
 
 ## API Endpoints
@@ -275,6 +300,36 @@ curl -s -X POST "http://localhost:8000/v1/windows/{window_id}/label" \
 
 Returns 404 if window not found; 422 if label is not in LABELS_ALLOWED.
 
+### Phase 6: POST /v1/windows/{window_id}/predict
+
+Run ONNX model prediction on a stored pose window. Optionally store the result in `window_predictions`.
+
+**Headers:** `X-API-Key` required.
+
+**Request Body (optional):**
+```json
+{ "model_key": "custom10_tcn_v1_vel", "store": true, "return_probs": false }
+```
+- `model_key`: default from `MODEL_KEY_DEFAULT` if omitted
+- `store`: save prediction to DB (default true)
+- `return_probs`: include full probability vector in response (default false)
+
+**Response:** `window_id`, `model_key`, `model_version`, `pred_label_id`, `pred_label`, `pred_conf`, and optionally `probs`.
+
+Returns 404 if window not found; 503 if the model is not available.
+
+### Phase 6: POST /v1/predict
+
+Run ONNX prediction on a window sent in the request body (same contract as inference: `window` + `people` with keypoints). Does not store the window in DB.
+
+**Headers:** `X-API-Key` required.
+
+**Request Body:** Same shape as inference: `{ "window": { "ts_start_ms", "ts_end_ms", "fps", "size" }, "people": [ { "track_id", "keypoints", "pose_conf" } ] }`. Uses the first person's keypoints.
+
+**Response:** `model_key`, `model_version`, `pred_label_id`, `pred_label`, `pred_conf`, `probs`.
+
+Returns 503 if the default model is not available.
+
 ## Data Retrieval Endpoints
 
 ### GET /v1/events
@@ -356,7 +411,7 @@ http://localhost:8000/dashboard/devices/pi-001
 
 ## Testing
 
-The project includes **112 automated tests** covering:
+The project includes **112+ automated tests** covering:
 - Health check endpoint
 - Request validation and feature-based inference
 - Database operations

@@ -7,44 +7,14 @@ Models are used to interact with the database in an object-oriented way.
 Tables:
 - devices: Stores registered edge devices
 - activity_events: Stores inference results (activity predictions)
-- pose_windows: Stores completed pose windows (keypoints [T][K][3]) for labeling and dataset export
 """
-from sqlalchemy import Column, String, Integer, BigInteger, Float, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, BigInteger, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, UTC
 import uuid
 
 from app.database import Base
-
-
-class PoseWindow(Base):
-    """
-    Pose window: one completed window of keypoints [T][K][3] from edge or infer.
-
-    Used for labeling and dataset export (Phase 5). Each row = one window (one person).
-    """
-    __tablename__ = "pose_windows"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    device_id = Column(String, nullable=False, index=True)
-    camera_id = Column(String, nullable=False, index=True)
-    session_id = Column(String, nullable=True, index=True)  # null for infer-originated
-    track_id = Column(Integer, nullable=False, index=True)
-    ts_start_ms = Column(BigInteger, nullable=False)
-    ts_end_ms = Column(BigInteger, nullable=False)
-    fps = Column(Float, nullable=False)
-    window_size = Column(Integer, nullable=False)
-    coord_space = Column(String, nullable=False, default="norm")  # "norm" or "pixel"
-    keypoints = Column(JSON, nullable=False)  # [T][K][3]; JSON for SQLite/Postgres compatibility
-    mean_pose_conf = Column(Float, nullable=True)
-    missing_ratio = Column(Float, nullable=True)
-    label = Column(String, nullable=True, index=True)
-    label_source = Column(String, nullable=True)  # "manual" | "import" | "auto"
-    labeled_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
-
-    activity_events = relationship("ActivityEvent", back_populates="pose_window")
 
 
 class Device(Base):
@@ -147,9 +117,5 @@ class ActivityEvent(Base):
     # Indexed for fast sorting by creation time
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
 
-    # Optional link to the pose window that produced this event (Phase 5)
-    window_id = Column(UUID(as_uuid=True), ForeignKey("pose_windows.id"), nullable=True, index=True)
-
     # Relationship: many events belong to one device
     device = relationship("Device", back_populates="events")
-    pose_window = relationship("PoseWindow", back_populates="activity_events")
