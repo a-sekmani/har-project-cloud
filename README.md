@@ -1,6 +1,13 @@
 # Cloud HAR - Human Activity Recognition API
 
-Cloud service for receiving skeleton data from edge devices and returning activity recognition results. It accepts **frame-level events** from the edge (`POST /v1/edge/events`), normalizes and aggregates them into windows in memory; it also accepts **window-level inference requests** (`POST /v1/activity/infer`) and returns feature-based activity predictions (standing / moving / unknown). Results are stored in PostgreSQL and can be viewed through a web dashboard. **Phase 5** adds a **pose windows store** (`pose_windows` table): every completed window (from edge or from `/v1/activity/infer`) is saved; activity events link to windows via `window_id`. You can **list and filter windows** (`GET /v1/windows`), **label them** (`POST /v1/windows/{id}/label` or the dashboard), and **export a dataset** (`scripts/export_dataset.py`).
+Cloud service for human activity recognition from skeleton (pose) data. It provides:
+
+- **Window-level inference** (`POST /v1/activity/infer`): accepts a full pose window and returns activity predictions (currently mock).
+- **Pose windows store** (`pose_windows` table): store windows with optional keypoints for later ONNX prediction. Windows can be seeded from JSON/JSONL via `scripts/seed_windows.py`.
+- **ONNX prediction** (Phase 6): run an ONNX model on a stored window that has keypoints (`POST /v1/windows/{id}/predict`); results are saved in `window_predictions` and shown on the dashboard.
+- **Dashboard**: view recent windows with labels and predicted activity/confidence; label windows using labels from the selected model.
+
+**Window ingest (Phase 7.A):** The edge can send a full window via `POST /v1/windows/ingest` (same contract as HAR-WindowNet samples); the cloud stores it and optionally runs ONNX. There is no frame-level ingest (`POST /v1/edge/events` or `/v1/frames`); the schema for frame events is in `app/edge_schemas.py` for future use.
 
 ## Requirements
 
@@ -14,53 +21,34 @@ Cloud service for receiving skeleton data from edge devices and returning activi
 har-project-cloud/
   app/
     __init__.py
-    main.py              # FastAPI application and endpoints
-    schemas.py           # Pydantic models for inference request/response
-    edge_schemas.py      # Pydantic schemas for edge frame_event (POST /v1/edge/events)
-    config.py            # Configuration settings
+    main.py              # FastAPI application and routes
+    schemas.py           # Pydantic request/response (inference, label, predict)
+    edge_schemas.py      # Pydantic schemas for edge frame_event (for future ingest)
+    config.py            # Configuration (API_KEY, DATABASE_URL, MODELS_DIR, MODEL_KEY_DEFAULT)
     logging.py           # Logging setup
-    health.py            # Health check endpoint
-    database.py          # Database connection and session management
-    models.py            # SQLAlchemy ORM models
-    services.py          # Business logic and database operations
-    api_schemas.py       # Pydantic schemas for API responses
-    normalize.py         # Edge payload → InternalFrame normalization (COCO-17)
-    aggregation.py      # In-memory buffers, window build (frame_event → window payload)
-    features.py          # Temporal features (motion_energy, center_drift, missing_ratio)
-    inference.py         # Feature-based activity inference (standing / moving / unknown)
-    window_pipeline.py   # Window completion hook: auto-infer on completed window
-    ml/                  # Phase 6: ONNX inference (registry, features, onnx_runner)
-    templates/           # Jinja2 templates for dashboard
-      dashboard.html
+    health.py            # Health check (GET /health)
+    database.py          # DB connection and session
+    models.py            # SQLAlchemy ORM (Device, ActivityEvent, PoseWindow, WindowPrediction)
+    models_meta.py       # List models and load label_map / version from models/
+    services.py          # Business logic (windows, predictions, dashboard data)
+    api_schemas.py       # Pydantic API response schemas
+    ml/                  # Phase 6: feature extraction and ONNX inference
+      features.py        # keypoints → model input (1, 30, 85) with velocity
+      onnx_runner.py     # Load ONNX, run inference, return pred_label / pred_conf / probs
+    templates/
+      dashboard.html     # Recent windows + predicted activity / confidence
       device_dashboard.html
-      label.html         # Labeling page for pose windows
+      label.html         # Label pose windows (labels from model label_map)
   scripts/
-    export_dataset.py    # Export pose windows to JSONL or NPZ
-    clear_db.py         # Truncate devices, activity_events, pose_windows
-  docs/
-    EDGE_DATA_SHAPE.md   # Edge data contract and examples
-  tests/                 # Test suite (112+ tests, including Phase 6 ML and predict)
-    test_health.py
-    test_infer_schema.py
-    test_database.py
-    test_api_edge_cases.py
-    test_edge_aggregation.py  # POST /v1/edge/events, aggregation, debug endpoints
-    test_normalize.py        # normalize_frame_event unit tests
-    test_aggregation.py      # ingest_internal_frame unit tests
-    test_features.py         # extract_window_features unit tests
-    test_inference_rules.py  # infer_activity (standing/moving/unknown) unit tests
-    test_golden_edge.py
-    test_windows.py         # GET/POST /v1/windows, labeling API (Phase 5)
-    test_ml_features.py    # Phase 6 ML feature extraction (vel, norm, raw)
-    test_ml_registry.py    # Phase 6 model registry (load, label_map)
-    test_predict.py        # Phase 6 POST /v1/windows/{id}/predict, POST /v1/predict
-    test_multiple_people.py
-    test_multiple_devices.py
-    test_response_format.py
-    test_integration.py
+    seed_windows.py      # Insert pose_windows from JSON/JSONL (with keypoints if present)
+  tests/
+    test_health.py, test_database.py, test_infer_schema.py, test_api_edge_cases.py
+    test_golden_edge.py, test_normalize.py, test_multiple_people.py, test_multiple_devices.py
+    test_response_format.py, test_integration.py
     fixtures/
       golden_edge_payload.json
-  models/               # ONNX model dir (e.g. models/<model_key>/model.onnx, label_map.json, model_meta.json)
+  models/               # ONNX models: models/<model_key>/model.onnx, label_map.json, model_meta.json
+    README.md            # Model directory layout
   alembic/              # Database migrations
   Dockerfile
   docker-compose.yml
@@ -127,22 +115,37 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### Phase 6: Running with ONNX
 
-To use ML-based prediction (POST /v1/windows/{id}/predict and POST /v1/predict), place an exported HAR-WindowNet model under the `models/` directory. Default path is `./models` (override with `MODELS_DIR`). Each model lives in a subdirectory named by `model_key` (e.g. `models/custom10_tcn_v1_vel/`) with `model.onnx`, `label_map.json`, and `model_meta.json`. Set `MODEL_KEY_DEFAULT` to the key of the model to use when no `model_key` is provided in the request. See `models/README.md` for the expected layout.
+Place an exported HAR-WindowNet-style model under `models/`. Default path is `./models` (override with `MODELS_DIR`). Each model lives in a subdirectory named by `model_key` (e.g. `models/c_norm_vel/`) with:
 
-**Smoke test (after placing a model in `models/<model_key>/`):**
+- `model.onnx` — exported ONNX model (input shape e.g. `[1, 30, 85]`)
+- `label_map.json` — mapping from class index to label name (e.g. `id_to_name`)
+- `model_meta.json` — e.g. `input_shape`, `window_size`, `input_features`, `feature_spec`
+
+Set `MODEL_KEY_DEFAULT` (e.g. `c_norm_vel`) for the dashboard default. See `models/README.md` for layout.
+
+**Dependencies:** `numpy`, `onnxruntime` (in `pyproject.toml`). Install with `pip install -e .` or `pip install numpy onnxruntime`.
+
+**Getting windows with keypoints:** The predict endpoint requires the window to have `keypoints_json` (full keypoints array). Seed from a JSONL that contains a `keypoints` field:
+
 ```bash
-# Start API (and Postgres if needed)
+python scripts/seed_windows.py --from labelled.jsonl --limit 20
+```
+
+**Smoke test:**
+```bash
+# Start API and Postgres (e.g. docker-compose up -d postgres; alembic upgrade head; uvicorn app.main:app --host 0.0.0.0 --port 8000)
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# Create a window (e.g. via POST /v1/activity/infer or edge), then get its id from GET /v1/windows
-curl -s -X GET "http://localhost:8000/v1/windows?limit=1" -H "X-API-Key: dev-key" | jq '.windows[0].id'
+# List windows (use one that has keypoints, e.g. after seed from JSONL)
+curl -s "http://localhost:8000/v1/windows?limit=5" -H "X-API-Key: dev-key" | jq '.windows[0].id'
 
-# Predict by window id (replace WINDOW_ID)
+# Predict (replace WINDOW_ID; body must include model_key)
 curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" \
   -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
-  -d '{"store": true, "return_probs": true}' | jq .
+  -d '{"model_key":"c_norm_vel","store":true,"return_probs":true}' | jq .
 
-# Check DB: window_predictions should have one row for that window_id
+# Dashboard shows Predicted Activity and Pred Conf for that model
+# Open http://localhost:8000/dashboard?model_key=c_norm_vel
 ```
 
 ## API Endpoints
@@ -160,10 +163,10 @@ Health check endpoint for monitoring and load balancers.
 
 ### POST /v1/activity/infer
 
-Main inference endpoint. Accepts skeleton window data and returns activity predictions. Results are automatically saved to the database. When **STORE_INFER_WINDOWS** is enabled (default), one **PoseWindow** row is created per person and linked to the created **ActivityEvent** via `window_id`.
+Accepts skeleton window data and returns activity predictions. **Current behaviour:** mock logic only (no database write, no PoseWindow or ActivityEvent created). All endpoints require `X-API-Key` (default: `dev-key`).
 
 **Headers:**
-- `X-API-Key`: Required (default value: `dev-key`)
+- `X-API-Key`: Required
 
 **Request Body:**
 ```json
@@ -217,278 +220,145 @@ Main inference endpoint. Accepts skeleton window data and returns activity predi
 }
 ```
 
-## Validation Rules
+**Validation:** `schema_version` must be 1; `window.size` 10–120; `window.fps` 1–120; `people` non-empty; each person has `track_id >= 0`, `pose_conf` in [0,1], and `keypoints` shape `[T][K][3]` with `T == window.size` and `K` 17 or 25.
 
-- `schema_version` must equal 1
-- `window.size` between 10 and 120
-- `window.fps` between 1 and 120
-- `people` must not be empty
-- For each person:
-  - `track_id >= 0`
-  - `pose_conf` between 0 and 1
-  - `keypoints` shape must be `[T][K][3]` where:
-    - `T == window.size`
-    - `K = 17` or `25`
-    - Last dimension = 3 (x, y, confidence)
+**Edge ingest:** There is no frame-level `POST /v1/edge/events` or `/v1/frames`. **Window-level ingest** is available: `POST /v1/windows/ingest` (Phase 7.A) accepts a full window (same contract as HAR-WindowNet samples) and optionally runs ONNX. The edge frame-event schema is in `app/edge_schemas.py` for future use.
 
-## Feature-based Inference (Phase 4)
+## Models API
 
-Inference uses **temporal features** from the keypoints window. **Quality gate:** only `unknown` when `mean_pose_conf < 0.25` or `missing_ratio > 0.4`; above the gate, `pose_conf` is used only to **reduce confidence** (not to block classification). **Locomotion (moving)** is based on **center_drift** (body center displacement from first to last frame), not limb jitter (`motion_energy`), so walking is detected even when wrists/ankles vibrate or drop. Body center = centroid of shoulders + hips (COCO-17). **standing** = still + micro_motion (in-place); **moving** = locomotion only. Debug exposes `center_drift`, `motion_energy`, `window_duration_s`, `avg_center_speed` per window for calibration. **Calibrate TH_CENTER_DRIFT:** log these for ~30 standing and ~30 walking windows, take median per class, set the threshold between the two medians.
+### GET /v1/models
 
-## Edge frame events (POST /v1/edge/events)
+List available model keys (subdirectories of `MODELS_DIR` with `label_map.json`). Requires `X-API-Key`.
 
-Accepts frame-level events from the edge (`event_type: "frame_event"`). Frames are normalized and aggregated in memory per `(device_id, camera_id, track_id)`; when a buffer reaches the window size (default **30 frames**, ≈1 s at 30 fps), a Cloud window payload is built and logged. **Optionally**, when `EDGE_AUTO_INFER` is enabled, the same inference + persist logic as `/v1/activity/infer` runs automatically (no HTTP); results are saved to PostgreSQL and appear on the dashboard.
+### GET /v1/models/{model_key}
 
-**Headers:**
-- `X-API-Key`: Required (same as inference; 401 if missing or invalid)
+Get model metadata: `model_key`, `model_version`, `labels`. Requires `X-API-Key`. Returns 404 if not found, 503 if files missing.
 
-**Contract:**
-- **camera_id priority:** 1. `source.camera_id` → 2. Query `?camera_id=` → 3. Header `X-Camera-Id` → 4. Default (e.g. `cam-1`)
-- **ts_unix_ms:** int or float accepted; converted to int in cloud
-- **persons:** required field; value can be `[]`
-- **keypoints:** 17 objects `{ name, x, y, c }` with names = COCO-17 set; order in request is free; cloud sorts by COCO-17 in normalization
-- **x, y:** currently treated as **pixel** coordinates in ingestion
-- Extra fields (e.g. `bbox`, `score`) allowed (`extra="allow"`)
-
-Full contract and examples: **[docs/EDGE_DATA_SHAPE.md](docs/EDGE_DATA_SHAPE.md)**
-
-**Debug endpoints** (require `X-API-Key`):
-- `GET /debug/buffers` — current aggregation buffers (key, frame_count, last_ts_ms), `frame_events_received`, and `windows_infer_failed_db` (count of auto-infer failures due to DB)
-- `GET /debug/windows?n=20` — last n completed windows; each window includes `auto_infer_attempted`, `auto_infer_status` (ok | failed_db | failed_validation | disabled), and `saved` (`n` between 1 and 100)
-
-**Flow:** Edge sends `frame_event` → validated by `EdgeFrameEventSchema` → normalized to `InternalFrame` (COCO-17 order) → buffered per `(device_id, camera_id, track_id)` → when buffer reaches the window size (default 30 frames), a window payload is built. If **EDGE_AUTO_INFER** is true, `infer_and_persist` runs (same logic as `/v1/activity/infer`) and the event is saved to the database; otherwise only logging. If the database is unavailable during auto-infer, ingestion still returns 202 and the failure is logged and counted in `windows_infer_failed_db`.
-
-## Windows API (Phase 5)
+## Windows API
 
 All windows endpoints require **X-API-Key**.
 
 ### GET /v1/windows
 
-List pose windows with optional filters. Keypoints are omitted by default; use `include_keypoints=1` to include them.
+List pose windows (metadata only; keypoints not returned in list). **Query:** `limit` (default 100).
 
-**Query Parameters:** `device_id`, `session_id`, `camera_id`, `track_id`, `from` (ts_start_ms), `to` (ts_end_ms), `label`, `limit` (default 100), `include_keypoints` (0 or 1, default 0)
-
-**Example:**
 ```bash
 curl -s "http://localhost:8000/v1/windows?limit=10" -H "X-API-Key: dev-key"
 ```
 
 ### GET /v1/windows/{window_id}
 
-Get a single pose window by ID. Keypoints are included by default; use `include_keypoints=0` to omit.
+Get one pose window by ID (metadata; keypoints stored in DB as `keypoints_json` but not exposed in this response by default).
 
-**Example:**
 ```bash
 curl -s "http://localhost:8000/v1/windows/{window_id}" -H "X-API-Key: dev-key"
 ```
 
 ### POST /v1/windows/{window_id}/label
 
-Set label and label_source for a pose window. Label must be one of **LABELS_ALLOWED** (default: `standing`, `moving`, `sitting`, `unknown`).
+Set label for a pose window. **Body:** `{ "label": "moving", "label_source": "manual" }`. Label is free-form (dashboard label dropdown uses labels from the selected model’s `label_map.json`). Returns 404 if window not found.
 
-**Request Body:**
-```json
-{ "label": "moving", "label_source": "manual" }
-```
-
-**Example:**
 ```bash
 curl -s -X POST "http://localhost:8000/v1/windows/{window_id}/label" \
   -H "Content-Type: application/json" -H "X-API-Key: dev-key" \
   -d '{"label": "moving", "label_source": "manual"}'
 ```
 
-Returns 404 if window not found; 422 if label is not in LABELS_ALLOWED.
+### POST /v1/windows/{window_id}/predict (Phase 6)
 
-### Phase 6: POST /v1/windows/{window_id}/predict
+Run ONNX inference on a stored window. The window **must have `keypoints_json`** (e.g. seeded from JSONL with a `keypoints` field); otherwise returns 400.
 
-Run ONNX model prediction on a stored pose window. Optionally store the result in `window_predictions`.
-
-**Headers:** `X-API-Key` required.
-
-**Request Body (optional):**
+**Request Body:**
 ```json
-{ "model_key": "custom10_tcn_v1_vel", "store": true, "return_probs": false }
+{ "model_key": "c_norm_vel", "store": true, "return_probs": false }
 ```
-- `model_key`: default from `MODEL_KEY_DEFAULT` if omitted
-- `store`: save prediction to DB (default true)
-- `return_probs`: include full probability vector in response (default false)
+- `model_key`: required; must exist under `models/`
+- `store`: save result in `window_predictions` (default true)
+- `return_probs`: include full class probabilities in response (default false)
 
-**Response:** `window_id`, `model_key`, `model_version`, `pred_label_id`, `pred_label`, `pred_conf`, and optionally `probs`.
+**Response:** `pred_label`, `pred_conf`, `model_key`, and optionally `probs` (list of `{ "label", "score" }`).
 
-Returns 404 if window not found; 503 if the model is not available.
+Returns 404 if window or model not found; 400 if window has no keypoints or feature extraction fails; 503 if model files are missing.
 
-### Phase 6: POST /v1/predict
-
-Run ONNX prediction on a window sent in the request body (same contract as inference: `window` + `people` with keypoints). Does not store the window in DB.
-
-**Headers:** `X-API-Key` required.
-
-**Request Body:** Same shape as inference: `{ "window": { "ts_start_ms", "ts_end_ms", "fps", "size" }, "people": [ { "track_id", "keypoints", "pose_conf" } ] }`. Uses the first person's keypoints.
-
-**Response:** `model_key`, `model_version`, `pred_label_id`, `pred_label`, `pred_conf`, `probs`.
-
-Returns 503 if the default model is not available.
-
-## Data Retrieval Endpoints
-
-### GET /v1/events
-
-Get recent activity events from all devices.
-
-**Query Parameters:**
-- `limit` (optional): Number of events to return (1-1000, default: 100)
-
-**Example:**
 ```bash
-curl "http://localhost:8000/v1/events?limit=50"
+curl -s -X POST "http://localhost:8000/v1/windows/{window_id}/predict" \
+  -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
+  -d '{"model_key":"c_norm_vel","store":true,"return_probs":true}'
 ```
 
-### GET /v1/devices
+### POST /v1/windows/ingest (Phase 7.A)
 
-Get all registered devices.
+Ingest a full window from the edge (HAR-WindowNet-style contract). The window is stored in `pose_windows` with keypoints; it appears in `GET /v1/windows` and on the dashboard. Optionally run ONNX and store the prediction.
 
-**Example:**
+**Query params (optional):**
+- `predict`: if `true`, run the model and store result in `window_predictions` (default: false)
+- `model_key`: required when `predict=true`; otherwise uses `MODEL_KEY_DEFAULT`
+- `return_probs`: if `true` and `predict=true`, include full class probabilities in the response (default: false)
+
+**Request body (JSON):** Same shape as a HAR-WindowNet sample window:
+- Required: `device_id`, `camera_id`, `track_id`, `ts_start_ms`, `ts_end_ms`, `fps`, `window_size`, `keypoints` (30 frames × 17 keypoints × 3 values [x, y, conf], each in [0, 1])
+- Optional: `id` (UUID), `session_id`, `mean_pose_conf`, `label`, `label_source`, `created_at` (ISO datetime)
+
+**Response:** Window fields (`id`, `device_id`, `camera_id`, `track_id`, `ts_*`, `fps`, `window_size`, `label`, `created_at`). If `predict=true`, also `pred_label`, `pred_conf`, `model_key`, and optionally `probs`.
+
+**409 Conflict:** If the body includes an `id` that already exists in `pose_windows`, the server returns 409 with a message suggesting to omit `id` to create a new window. When reusing a sample file (e.g. from `labelled.jsonl`), remove the `id` field or use a fresh copy to avoid duplicate-key errors.
+
 ```bash
-curl "http://localhost:8000/v1/devices"
-```
+# Ingest only
+curl -s -X POST "http://localhost:8000/v1/windows/ingest" \
+  -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
+  --data-binary @window_sample.json
 
-### GET /v1/devices/{device_id}/events
-
-Get activity events for a specific device.
-
-**Query Parameters:**
-- `limit` (optional): Number of events to return (1-1000, default: 200)
-
-**Example:**
-```bash
-curl "http://localhost:8000/v1/devices/pi-001/events?limit=100"
+# Ingest and run ONNX (use a JSON file with keypoints, e.g. one line from labelled.jsonl or a HAR-WindowNet sample)
+curl -s -X POST "http://localhost:8000/v1/windows/ingest?predict=true&model_key=c_norm_vel&return_probs=true" \
+  -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
+  --data-binary @window_sample.json
 ```
 
 ## Dashboard
 
-The application includes a web-based dashboard for viewing activity events.
-
 ### Main Dashboard
 
-View recent events from all devices:
-```
-http://localhost:8000/dashboard
-```
+**URL:** `http://localhost:8000/dashboard` (optional query: `?model_key=c_norm_vel`)
 
-**Features:**
-- Table of recent events with device, camera, track ID, activity, and confidence
-- Auto-refresh every 3 seconds
-- Clickable device IDs to view device-specific events
-- Color-coded confidence levels
-- Link to **Label windows** page
+Shows the last N pose windows with: device, camera, track, **Activity** (manual/ground-truth label), **Predicted Activity** and **Pred Conf** from `window_predictions` for the selected model. Use the model dropdown to switch model; only windows that have a prediction for that model show Predicted Activity / Pred Conf.
 
-### Label Windows (Phase 5)
+### Label Windows
 
-Label pose windows from the dashboard:
-```
-http://localhost:8000/dashboard/label
-```
+**URL:** `http://localhost:8000/dashboard/label`
 
-Lists the last N pose windows with a dropdown to set label (standing, moving, sitting, unknown). Form submit updates the window and redirects back.
-
-### Device Dashboard
-
-View events for a specific device:
-```
-http://localhost:8000/dashboard/devices/{device_id}
-```
-
-**Example:**
-```
-http://localhost:8000/dashboard/devices/pi-001
-```
+Lists recent pose windows with a dropdown to set or change the label. Label options come from the selected model’s `label_map.json` (e.g. drink_water, eat_meal, sit_down, …). Submit updates the window and redirects back.
 
 ## Scripts
 
-- **scripts/export_dataset.py** — Export pose windows from the database to a file (JSONL or NPZ). Options: `--label`, `--labelled-only`, `--from-ts`, `--to-ts`, `--limit`, `--output`, `--format` (jsonl | npz). Example: `python scripts/export_dataset.py --labelled-only -o labelled.jsonl`
-- **scripts/clear_db.py** — Truncate all data in `activity_events`, `pose_windows`, and `devices` (schema unchanged). Example: `python scripts/clear_db.py` (uses `DATABASE_URL` from environment or config default).
+- **scripts/seed_windows.py** — Insert pose windows from a JSON or JSONL file (e.g. HAR-WindowNet export or samples). If each record has a `keypoints` field, it is stored in `pose_windows.keypoints_json` so that `POST /v1/windows/{id}/predict` can run ONNX on it.
+  - Usage: `python scripts/seed_windows.py --from labelled.jsonl [--limit 50]`
+  - Example: `python scripts/seed_windows.py --from labelled.jsonl --limit 20` then open `http://localhost:8000/dashboard` and run predict on the new windows.
 
 ## Testing
 
-The project includes **112+ automated tests** covering:
-- Health check endpoint
-- Request validation and feature-based inference
-- Database operations
-- API edge cases (limits, empty DB, sorting)
-- **Edge ingestion:** POST /v1/edge/events (validation, 401, camera_id priority, extra fields, keypoints)
-- **Aggregation:** window completion, multi-person buffers, debug endpoints
-- **Normalization:** `normalize_frame_event` (COCO-17 order, undetected points, ts conversion, multi-person)
-- **Aggregation unit:** `ingest_internal_frame` (buffers, window metadata, buffer clear)
-- **Features:** `extract_window_features` (motion_energy, missing_ratio, static/linear motion)
-- **Inference rules:** `infer_activity` (standing / moving / unknown from center_drift, motion_energy, quality gate)
-- Multiple people in inference requests
-- Multiple devices and upsert behavior
-- Response format validation
-- End-to-end integration workflows
-- **Phase 5:** GET/POST /v1/windows, labeling API (valid/invalid/404), API key required, edge → PoseWindow + ActivityEvent.window_id
-
-### Running Tests
+Run tests with:
 
 ```bash
-# Activate virtual environment first
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Run all tests
+source venv/bin/activate   # or venv\Scripts\activate on Windows
 pytest
-
-# Run with verbose output
-pytest -v
-
-# Run specific test file
-pytest tests/test_health.py -v
-pytest tests/test_database.py -v
-pytest tests/test_edge_aggregation.py -v
-pytest tests/test_normalize.py -v
-pytest tests/test_aggregation.py -v
-pytest tests/test_features.py -v
-pytest tests/test_inference_rules.py -v
-pytest tests/test_windows.py -v
-pytest tests/test_api_edge_cases.py -v
-
-# Run with coverage report
+pytest -v                  # verbose
+pytest tests/test_health.py tests/test_database.py -v
 pytest --cov=app --cov-report=term-missing
 ```
 
-### Test Files
-
-- `test_health.py`: Health check endpoint
-- `test_infer_schema.py`: Request validation and feature-based inference
-- `test_database.py`: Database operations and endpoints
-- `test_edge_aggregation.py`: POST /v1/edge/events, aggregation, debug buffers/windows, API key, camera_id
-- `test_normalize.py`: `normalize_frame_event` unit tests (COCO-17 order, undetected points, multi-person)
-- `test_aggregation.py`: `ingest_internal_frame` unit tests (buffers, window completion, buffer clear)
-- `test_features.py`: `extract_window_features` unit tests (motion_energy, center_drift, missing_ratio)
-- `test_inference_rules.py`: `infer_activity` unit tests (standing / moving / unknown)
-- `test_golden_edge.py`: Golden edge payload and inference (standing / moving)
-- `test_windows.py`: GET/POST /v1/windows, labeling (Phase 5)
-- `test_api_edge_cases.py`: Edge cases and validation
-- `test_multiple_people.py`: Multiple people scenarios
-- `test_multiple_devices.py`: Multiple devices and upsert
-- `test_response_format.py`: Response format validation
-- `test_integration.py`: End-to-end workflows
-
-**Note:** Most tests use in-memory SQLite and don't require Docker or PostgreSQL. Edge/aggregation tests don't use the database.
+Test modules include: `test_health.py`, `test_database.py`, `test_infer_schema.py`, `test_api_edge_cases.py`, `test_golden_edge.py`, `test_normalize.py`, `test_multiple_people.py`, `test_multiple_devices.py`, `test_response_format.py`, `test_integration.py`. Many tests use in-memory SQLite; some expect PostgreSQL (e.g. `DATABASE_URL`).
 
 ## Environment Variables
 
-- `API_KEY`: API key for authentication (inference and edge/debug endpoints; default: `dev-key`)
-- `HOST`: Server host address (default: `0.0.0.0`)
-- `PORT`: Server port (default: `8000`)
+- `API_KEY`: API key for all protected endpoints (default: `dev-key`)
+- `HOST`, `PORT`: Server bind (default: `0.0.0.0`, `8000`)
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 - `DATABASE_URL`: PostgreSQL connection string (default: `postgresql+psycopg://cloudhar:cloudhar@localhost:5433/cloudhar`)
-- `EDGE_WINDOW_SIZE`: Frames per aggregation window (default: `30`, ≈1 s at 30 fps)
-- `EDGE_CAMERA_ID_DEFAULT`: Default camera_id when not provided by edge (default: `cam-1`)
-- `EDGE_AUTO_INFER`: When `1`, `true`, or `yes`, run inference + persist when a window completes (edge → DB; default window size 30 frames); default: `0` (log only)
-- **Phase 5:** `LABELS_ALLOWED`: Comma-separated list of allowed labels for window labeling (default: `standing,moving,sitting,unknown`)
-- **Phase 5:** `STORE_INFER_WINDOWS`: When `1`, `true`, or `yes`, save a PoseWindow per person on `POST /v1/activity/infer` and link activity_events via `window_id`; default: `1`
+- `MODELS_DIR`: Directory for ONNX models (default: `models`)
+- `MODEL_KEY_DEFAULT`: Default model key for dashboard (default: `c_norm_vel`)
 
-**Note:** When using Docker Compose, `DATABASE_URL` is set to the postgres service; other defaults apply.
+With Docker Compose, `DATABASE_URL` is typically set to the postgres service.
 
 ## Logging
 
@@ -503,43 +373,23 @@ Each inference request is logged with:
 
 ## Database
 
-The application uses PostgreSQL to store:
-- **devices**: Registered edge devices (auto-created on first inference)
-- **activity_events**: Inference results with activity predictions; optional **window_id** (FK to pose_windows) when the event came from a stored window
-- **pose_windows** (Phase 5): Completed pose windows (keypoints [T][K][3]) from edge or infer; used for labeling and dataset export
+PostgreSQL stores:
+- **devices**: Registered devices (e.g. on first inference)
+- **activity_events**: Activity predictions (device, camera, track, window metadata, activity, confidence, optional quality fields)
+- **pose_windows**: Pose windows (device_id, camera_id, track_id, ts_*, fps, window_size, label, **keypoints_json**, created_at). Keypoints are stored when provided (e.g. by `seed_windows.py` from JSONL with a `keypoints` field).
+- **window_predictions** (Phase 6): ONNX results per window (window_id, model_key, pred_label, pred_conf, created_at).
 
-Database migrations are managed with Alembic and run automatically on Docker Compose startup. If the database is unavailable, the API returns **503** (and the dashboard shows a friendly error page) instead of 500.
+Migrations: Alembic; run `alembic upgrade head` locally or rely on Docker Compose startup. If the DB is unavailable, the API may return 503.
 
 ## Quick Start
 
-1. **Start services:**
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **Check health:**
-   ```bash
-   curl http://localhost:8000/health
-   ```
-
-3. **Send inference request:**
-   ```bash
-   curl -X POST http://localhost:8000/v1/activity/infer \
-     -H "Content-Type: application/json" \
-     -H "X-API-Key: dev-key" \
-     -d @test_request.json
-   ```
-
-4. **View dashboard:**
-   Open `http://localhost:8000/dashboard` in your browser
-
-5. **Query events:**
-   ```bash
-   curl "http://localhost:8000/v1/events?limit=10"
-   ```
-
-6. **Test edge ingestion** (optional): Send a `frame_event` to `POST /v1/edge/events` with `X-API-Key: dev-key`, then check `GET /debug/buffers`. See [docs/EDGE_DATA_SHAPE.md](docs/EDGE_DATA_SHAPE.md) for the full payload format and examples.
-
-7. **List pose windows** (Phase 5): `curl -s "http://localhost:8000/v1/windows?limit=10" -H "X-API-Key: dev-key"`
-
-8. **Label windows** (Phase 5): Open `http://localhost:8000/dashboard/label` or use `POST /v1/windows/{window_id}/label` with `{"label": "standing", "label_source": "manual"}`.
+1. **Start services:** `docker-compose up -d` (or start Postgres only and run the API locally).
+2. **Migrations:** `alembic upgrade head`
+3. **Run API:** `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+4. **Health:** `curl http://localhost:8000/health`
+5. **Seed windows (with keypoints):** `python scripts/seed_windows.py --from labelled.jsonl --limit 20` — or **ingest one window from file:** `curl -s -X POST "http://localhost:8000/v1/windows/ingest?predict=true&model_key=c_norm_vel" -H "X-API-Key: dev-key" -H "Content-Type: application/json" --data-binary @window_sample.json`
+6. **List windows:** `curl -s "http://localhost:8000/v1/windows?limit=5" -H "X-API-Key: dev-key"`
+7. **Run ONNX predict** (replace `WINDOW_ID`):  
+   `curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" -H "X-API-Key: dev-key" -H "Content-Type: application/json" -d '{"model_key":"c_norm_vel","store":true}'`
+8. **Dashboard:** Open `http://localhost:8000/dashboard?model_key=c_norm_vel` to see windows and their predicted activity/confidence.
+9. **Label page:** `http://localhost:8000/dashboard/label` to set or change labels on windows.

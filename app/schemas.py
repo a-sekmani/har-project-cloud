@@ -1,5 +1,8 @@
 """Pydantic schemas for request/response validation."""
-from typing import List
+from datetime import datetime
+from typing import List, Optional, Union
+from uuid import UUID
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -110,8 +113,8 @@ class InferenceResponseSchema(BaseModel):
 
 
 class SetLabelBody(BaseModel):
-    """Body for POST /v1/windows/{id}/label."""
-    label: str = Field(..., min_length=1)
+    """Body for POST /v1/windows/{id}/label. Empty label clears the label."""
+    label: str = Field(default="")
     label_source: str = Field(default="manual")
 
 
@@ -120,3 +123,53 @@ class PredictWindowBody(BaseModel):
     model_key: str = Field(..., min_length=1)
     store: bool = Field(default=True, description="Store prediction in window_predictions")
     return_probs: bool = Field(default=False, description="Include full class probabilities in response")
+
+
+class IngestWindowBody(BaseModel):
+    """Body for POST /v1/windows/ingest — full window from edge (HAR-WindowNet contract)."""
+    device_id: str = Field(..., min_length=1)
+    camera_id: str = Field(..., min_length=1)
+    track_id: int = Field(..., ge=0)
+    ts_start_ms: int = Field(...)
+    ts_end_ms: int = Field(...)
+    fps: Union[int, float] = Field(..., ge=1, le=120)
+    window_size: int = Field(..., ge=10, le=120)
+    keypoints: List[List[List[float]]] = Field(...)
+
+    id: Optional[UUID] = None
+    session_id: Optional[str] = None
+    mean_pose_conf: Optional[float] = None
+    label: Optional[str] = None
+    label_source: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    @model_validator(mode='after')
+    def validate_ts(self):
+        if self.ts_end_ms <= self.ts_start_ms:
+            raise ValueError("ts_end_ms must be greater than ts_start_ms")
+        return self
+
+    @model_validator(mode='after')
+    def validate_keypoints_ingest(self):
+        if not self.keypoints:
+            raise ValueError("keypoints cannot be empty")
+        if len(self.keypoints) != self.window_size:
+            raise ValueError(
+                f"keypoints must have {self.window_size} frames, got {len(self.keypoints)}"
+            )
+        for i, frame in enumerate(self.keypoints):
+            if len(frame) != 17:
+                raise ValueError(
+                    f"Frame {i} must have 17 keypoints, got {len(frame)}"
+                )
+            for j, kp in enumerate(frame):
+                if not isinstance(kp, list) or len(kp) != 3:
+                    raise ValueError(
+                        f"Keypoint [{i}][{j}] must have 3 values [x, y, conf]"
+                    )
+                for idx, v in enumerate(kp):
+                    if not (0 <= v <= 1):
+                        raise ValueError(
+                            f"Keypoint [{i}][{j}] value [{idx}] must be in [0, 1], got {v}"
+                        )
+        return self
