@@ -107,3 +107,16 @@ class InferenceResponseSchema(BaseModel):
     camera_id: str
     window: WindowSchema
     results: List[PersonResultSchema]
+
+
+class SetLabelBody(BaseModel):
+    """Body for POST /v1/windows/{id}/label."""
+    label: str = Field(..., min_length=1)
+    label_source: str = Field(default="manual")
+
+
+class PredictWindowBody(BaseModel):
+    """Body for POST /v1/windows/{id}/predict."""
+    model_key: str = Field(..., min_length=1)
+    store: bool = Field(default=True, description="Store prediction in window_predictions")
+    return_probs: bool = Field(default=False, description="Include full class probabilities in response")
