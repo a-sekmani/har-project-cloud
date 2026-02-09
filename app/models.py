@@ -8,7 +8,7 @@ Tables:
 - devices: Stores registered edge devices
 - activity_events: Stores inference results (activity predictions)
 """
-from sqlalchemy import Column, String, Integer, BigInteger, Float, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, BigInteger, Float, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, UTC
@@ -119,3 +119,36 @@ class ActivityEvent(Base):
 
     # Relationship: many events belong to one device
     device = relationship("Device", back_populates="events")
+
+
+class PoseWindow(Base):
+    """Pose window: one time window of pose data. Can be labelled; predictions in WindowPrediction."""
+    __tablename__ = "pose_windows"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(String, nullable=False, index=True)
+    camera_id = Column(String, nullable=False, index=True)
+    track_id = Column(Integer, nullable=False, index=True)
+    ts_start_ms = Column(BigInteger, nullable=False)
+    ts_end_ms = Column(BigInteger, nullable=False)
+    fps = Column(Integer, nullable=False)
+    window_size = Column(Integer, nullable=False)
+    label = Column(String, nullable=True, index=True)
+    keypoints_json = Column(Text, nullable=True)  # JSON array of frames x keypoints (x,y,conf)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
+
+    predictions = relationship("WindowPrediction", back_populates="window", order_by="WindowPrediction.created_at.desc()")
+
+
+class WindowPrediction(Base):
+    """ONNX prediction for a pose window."""
+    __tablename__ = "window_predictions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    window_id = Column(UUID(as_uuid=True), ForeignKey("pose_windows.id", ondelete="CASCADE"), nullable=False, index=True)
+    model_key = Column(String, nullable=False, index=True)
+    pred_label = Column(String, nullable=False)
+    pred_conf = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
+
+    window = relationship("PoseWindow", back_populates="predictions")

@@ -101,6 +101,8 @@
                     <th>Camera</th>
                     <th>Track ID</th>
                     <th>Activity</th>
+                    <th>Predicted Activity</th>
+                    <th>Pred Conf</th>
                     <th>Confidence</th>
                     <th>K</th>
                     <th>Avg Pose Conf</th>
@@ -121,6 +123,8 @@
                             {{ event.activity }}
                         </span>
                     </td>
+                    <td>{% if event.prediction is defined and event.prediction %}{{ event.prediction.pred_label }}{% else %}—{% endif %}</td>
+                    <td>{% if event.prediction is defined and event.prediction %}<span class="confidence {% if event.prediction.pred_conf >= 0.6 %}high{% elif event.prediction.pred_conf >= 0.4 %}medium{% else %}low{% endif %}">{{ "%.2f"|format(event.prediction.pred_conf) }}</span>{% else %}—{% endif %}</td>
                     <td>
                         <span class="confidence {% if event.confidence >= 0.6 %}high{% elif event.confidence >= 0.4 %}medium{% else %}low{% endif %}">
                             {{ "%.2f"|format(event.confidence) }}
@@ -135,7 +139,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="11" style="text-align: center; padding: 40px;">
+                    <td colspan="13" style="text-align: center; padding: 40px;">
                         No events found for this device
                     </td>
                 </tr>
