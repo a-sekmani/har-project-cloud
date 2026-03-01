@@ -1,0 +1,24 @@
+{
+  "input_shape": [
+    1,
+    30,
+    85
+  ],
+  "window_size": 30,
+  "input_features": 85,
+  "fps": 30.0,
+  "keypoint_order": "coco17",
+  "features": [
+    "x",
+    "y",
+    "conf"
+  ],
+  "training_dataset": "ntu120",
+  "num_classes": 10,
+  "feature_spec": {
+    "features": "vel",
+    "conf_mode": "keep",
+    "norm_center": "auto",
+    "norm_scale": "auto"
+  }
+}

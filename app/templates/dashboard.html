@@ -119,7 +119,6 @@
                     <th>Time Range</th>
                     <th>FPS</th>
                     <th>Size</th>
-                    <th>Activity</th>
                     <th>Predicted</th>
                     <th>Pred Conf</th>
                     <th>Model</th>
@@ -127,7 +126,7 @@
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="13" style="text-align:center;color:var(--muted);">Loading…</td></tr>
+                <tr><td colspan="12" style="text-align:center;color:var(--muted);">Loading…</td></tr>
             </tbody>
         </table>
     </div>
@@ -216,7 +215,7 @@
         currentRows = rows;
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
             return;
         }
         const model = document.getElementById('model_key').value;
@@ -227,36 +226,22 @@
             const timeRangeStr = timeRange(row.ts_start_ms, row.ts_end_ms);
             return '<tr data-id="' + (row.id || '') + '">' +
                 '<td>' + formatTime(row.created_at) + '</td>' +
-                '<td class="win-id">' + shortId(row.id) + ' <button type="button" class="btn btn-sm copy-id" data-id="' + (row.id || '') + '">Copy</button> <a href="#" class="detail-link" data-id="' + (row.id || '') + '">Details</a></td>' +
+                '<td class="win-id">' + shortId(row.id) + '</td>' +
                 '<td><a href="#" class="filter-device" data-device="' + (row.device_id || '') + '">' + (row.device_id || '—') + '</a></td>' +
                 '<td>' + (row.camera_id ?? '—') + '</td>' +
                 '<td>' + (row.track_id ?? '—') + '</td>' +
                 '<td>' + timeRangeStr + '</td>' +
                 '<td>' + (row.fps ?? '—') + '</td>' +
                 '<td>' + (row.window_size ?? '—') + '</td>' +
-                '<td>' + (row.label || '—') + '</td>' +
                 '<td>' + (pred.pred_label || '—') + '</td>' +
                 '<td><span class="' + confClass(conf) + '">' + (conf != null ? conf.toFixed(2) : '—') + '</span></td>' +
                 '<td>' + modelStr + '</td>' +
                 '<td>' +
-                '<button type="button" class="btn btn-sm do-predict" data-id="' + (row.id || '') + '">Predict</button> ' +
-                '<a href="/dashboard/label?model_key=' + encodeURIComponent(model) + '&window_id=' + encodeURIComponent(row.id || '') + '" class="btn btn-sm">Label</a> ' +
-                '<a href="#" class="btn btn-sm detail-link" data-id="' + (row.id || '') + '">Details</a>' +
+                '<a href="/dashboard/label?model_key=' + encodeURIComponent(model) + '&window_id=' + encodeURIComponent(row.id || '') + '" class="btn btn-sm">Label</a>' +
                 '</td></tr>';
         }).join('');
-        tbody.querySelectorAll('.copy-id').forEach(btn => {
-            btn.addEventListener('click', () => {
-                navigator.clipboard.writeText(btn.dataset.id || '');
-            });
-        });
         tbody.querySelectorAll('.filter-device').forEach(a => {
             a.addEventListener('click', e => { e.preventDefault(); document.getElementById('filter_device').value = a.dataset.device || ''; fetchData(); });
-        });
-        tbody.querySelectorAll('.detail-link').forEach(a => {
-            a.addEventListener('click', e => { e.preventDefault(); openDetail(a.dataset.id); });
-        });
-        tbody.querySelectorAll('.do-predict').forEach(btn => {
-            btn.addEventListener('click', () => runPredict(btn.dataset.id));
         });
     }
 

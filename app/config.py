@@ -19,4 +19,4 @@ DATABASE_URL: str = os.getenv(
 
 # Models (for dashboard/label)
 MODELS_DIR: str = os.getenv("MODELS_DIR", "models")
-MODEL_KEY_DEFAULT: str = os.getenv("MODEL_KEY_DEFAULT", "c_norm_vel")
+MODEL_KEY_DEFAULT: str = os.getenv("MODEL_KEY_DEFAULT", "edge17_v6_lowlr")

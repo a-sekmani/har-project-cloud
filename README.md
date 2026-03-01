@@ -33,7 +33,7 @@ har-project-cloud/
     services.py          # Business logic (windows, predictions, dashboard data)
     api_schemas.py       # Pydantic API response schemas
     ml/                  # Phase 6: feature extraction and ONNX inference
-      features.py        # keypoints → model input (1, 30, 85) with velocity
+      features.py        # keypoints → model input (1, 30, 85) with normalization and velocity
       onnx_runner.py     # Load ONNX, run inference, return pred_label / pred_conf / probs
     templates/
       dashboard.html     # Recent windows + predicted activity / confidence
@@ -48,7 +48,6 @@ har-project-cloud/
     fixtures/
       golden_edge_payload.json
   models/               # ONNX models: models/<model_key>/model.onnx, label_map.json, model_meta.json
-    README.md            # Model directory layout
   alembic/              # Database migrations
   Dockerfile
   docker-compose.yml
@@ -121,9 +120,16 @@ Place an exported HAR-WindowNet-style model under `models/`. Default path is `./
 - `label_map.json` — mapping from class index to label name (e.g. `id_to_name`)
 - `model_meta.json` — e.g. `input_shape`, `window_size`, `input_features`, `feature_spec`
 
-Set `MODEL_KEY_DEFAULT` (e.g. `c_norm_vel`) for the dashboard default. See `models/README.md` for layout.
+Set `MODEL_KEY_DEFAULT` (e.g. `edge17_v6_lowlr`) for the dashboard default.
 
 **Dependencies:** `numpy`, `onnxruntime` (in `pyproject.toml`). Install with `pip install -e .` or `pip install numpy onnxruntime`.
+
+**Feature extraction pipeline** (must match training):
+1. **Center on hips**: Subtract hips midpoint (keypoints 11, 12) from all keypoints
+2. **Scale by shoulders**: Divide by shoulder width (distance between keypoints 5, 6)
+3. **Clamp**: Clip x, y values to [-3, 3]
+4. **Velocity**: Compute frame-to-frame difference (first frame = 0)
+5. **Feature layout**: 85 features per frame = 51 pose [x,y,conf × 17] + 34 velocity [dx,dy × 17]
 
 **Getting windows with keypoints:** The predict endpoint requires the window to have `keypoints_json` (full keypoints array). Seed from a JSONL that contains a `keypoints` field:
 
@@ -145,7 +151,7 @@ curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" \
   -d '{"model_key":"c_norm_vel","store":true,"return_probs":true}' | jq .
 
 # Dashboard shows Predicted Activity and Pred Conf for that model
-# Open http://localhost:8000/dashboard?model_key=c_norm_vel
+# Open http://localhost:8000/dashboard
 ```
 
 ## API Endpoints
@@ -291,15 +297,16 @@ curl -s -X POST "http://localhost:8000/v1/windows/{window_id}/predict" \
 Ingest a full window from the edge (HAR-WindowNet-style contract). The window is stored in `pose_windows` with keypoints; it appears in `GET /v1/windows` and on the dashboard. Optionally run ONNX and store the prediction.
 
 **Query params (optional):**
-- `predict`: if `true`, run the model and store result in `window_predictions` (default: false)
-- `model_key`: required when `predict=true`; otherwise uses `MODEL_KEY_DEFAULT`
-- `return_probs`: if `true` and `predict=true`, include full class probabilities in the response (default: false)
+- `model_key`: model to use for prediction (default: `MODEL_KEY_DEFAULT`, currently `edge17_v6_lowlr`)
+- `return_probs`: if `true`, include full class probabilities in the response (default: false)
+
+**Note:** Prediction runs automatically on ingest using the default model. The window is stored and the prediction result is saved in `window_predictions`.
 
 **Request body (JSON):** Same shape as a HAR-WindowNet sample window:
 - Required: `device_id`, `camera_id`, `track_id`, `ts_start_ms`, `ts_end_ms`, `fps`, `window_size`, `keypoints` (30 frames × 17 keypoints × 3 values [x, y, conf], each in [0, 1])
 - Optional: `id` (UUID), `session_id`, `mean_pose_conf`, `label`, `label_source`, `created_at` (ISO datetime)
 
-**Response:** Window fields (`id`, `device_id`, `camera_id`, `track_id`, `ts_*`, `fps`, `window_size`, `label`, `created_at`). If `predict=true`, also `pred_label`, `pred_conf`, `model_key`, and optionally `probs`.
+**Response:** Window fields (`id`, `device_id`, `camera_id`, `track_id`, `ts_*`, `fps`, `window_size`, `label`, `created_at`), plus `pred_label`, `pred_conf`, `model_key` (prediction runs automatically using `MODEL_KEY_DEFAULT`), and optionally `probs` if `return_probs=true`.
 
 **409 Conflict:** If the body includes an `id` that already exists in `pose_windows`, the server returns 409 with a message suggesting to omit `id` to create a new window. When reusing a sample file (e.g. from `labelled.jsonl`), remove the `id` field or use a fresh copy to avoid duplicate-key errors.
 
@@ -309,8 +316,13 @@ curl -s -X POST "http://localhost:8000/v1/windows/ingest" \
   -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
   --data-binary @window_sample.json
 
-# Ingest and run ONNX (use a JSON file with keypoints, e.g. one line from labelled.jsonl or a HAR-WindowNet sample)
-curl -s -X POST "http://localhost:8000/v1/windows/ingest?predict=true&model_key=c_norm_vel&return_probs=true" \
+# Ingest with auto-prediction (uses MODEL_KEY_DEFAULT)
+curl -s -X POST "http://localhost:8000/v1/windows/ingest" \
+  -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
+  --data-binary @window_sample.json
+
+# Ingest with specific model and return probabilities
+curl -s -X POST "http://localhost:8000/v1/windows/ingest?model_key=edge17_v6_lowlr&return_probs=true" \
   -H "X-API-Key: dev-key" -H "Content-Type: application/json" \
   --data-binary @window_sample.json
 ```
@@ -321,7 +333,7 @@ curl -s -X POST "http://localhost:8000/v1/windows/ingest?predict=true&model_key=
 
 **URL:** `http://localhost:8000/dashboard` (optional query: `?model_key=c_norm_vel`)
 
-Shows the last N pose windows with: device, camera, track, **Activity** (manual/ground-truth label), **Predicted Activity** and **Pred Conf** from `window_predictions` for the selected model. Use the model dropdown to switch model; only windows that have a prediction for that model show Predicted Activity / Pred Conf.
+Shows the last N pose windows with: device, camera, track, **Predicted Activity** and **Pred Conf** from `window_predictions` for the selected model. Use the model dropdown to switch model; only windows that have a prediction for that model show Predicted Activity / Pred Conf. Predictions are automatically generated when windows are ingested via `POST /v1/windows/ingest`.
 
 ### Label Windows
 
@@ -356,7 +368,7 @@ Test modules include: `test_health.py`, `test_database.py`, `test_infer_schema.p
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 - `DATABASE_URL`: PostgreSQL connection string (default: `postgresql+psycopg://cloudhar:cloudhar@localhost:5433/cloudhar`)
 - `MODELS_DIR`: Directory for ONNX models (default: `models`)
-- `MODEL_KEY_DEFAULT`: Default model key for dashboard (default: `c_norm_vel`)
+- `MODEL_KEY_DEFAULT`: Default model key for dashboard (default: `edge17_v6_lowlr`)
 
 With Docker Compose, `DATABASE_URL` is typically set to the postgres service.
 
@@ -387,9 +399,9 @@ Migrations: Alembic; run `alembic upgrade head` locally or rely on Docker Compos
 2. **Migrations:** `alembic upgrade head`
 3. **Run API:** `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 4. **Health:** `curl http://localhost:8000/health`
-5. **Seed windows (with keypoints):** `python scripts/seed_windows.py --from labelled.jsonl --limit 20` — or **ingest one window from file:** `curl -s -X POST "http://localhost:8000/v1/windows/ingest?predict=true&model_key=c_norm_vel" -H "X-API-Key: dev-key" -H "Content-Type: application/json" --data-binary @window_sample.json`
+5. **Seed windows (with keypoints):** `python scripts/seed_windows.py --from labelled.jsonl --limit 20` — or **ingest one window from file:** `curl -s -X POST "http://localhost:8000/v1/windows/ingest" -H "X-API-Key: dev-key" -H "Content-Type: application/json" --data-binary @window_sample.json`
 6. **List windows:** `curl -s "http://localhost:8000/v1/windows?limit=5" -H "X-API-Key: dev-key"`
 7. **Run ONNX predict** (replace `WINDOW_ID`):  
    `curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" -H "X-API-Key: dev-key" -H "Content-Type: application/json" -d '{"model_key":"c_norm_vel","store":true}'`
-8. **Dashboard:** Open `http://localhost:8000/dashboard?model_key=c_norm_vel` to see windows and their predicted activity/confidence.
+8. **Dashboard:** Open `http://localhost:8000/dashboard` to see windows and their predicted activity/confidence.
 9. **Label page:** `http://localhost:8000/dashboard/label` to set or change labels on windows.
