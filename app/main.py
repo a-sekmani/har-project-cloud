@@ -283,14 +283,21 @@ async def ingest_window(
     return out
 
 
-# --- Dashboard (HTML) ---
+# --- Web Pages (HTML) ---
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, model_key: Optional[str] = None, db: Session = Depends(get_db)):
+async def dashboard(request: Request):
+    """Dashboard home page (placeholder for future use)."""
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/windows", response_class=HTMLResponse)
+async def windows_page(request: Request, model_key: Optional[str] = None, db: Session = Depends(get_db)):
+    """Recent windows page."""
     key = model_key or MODEL_KEY_DEFAULT
     models = list_models()
     if key and key not in models:
         key = models[0] if models else None
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse("windows.html", {
         "request": request,
         "model_key": key,
         "models": models,
@@ -298,8 +305,9 @@ async def dashboard(request: Request, model_key: Optional[str] = None, db: Sessi
     })
 
 
-@app.get("/dashboard/label", response_class=HTMLResponse)
+@app.get("/windows/label", response_class=HTMLResponse)
 async def label_page(request: Request, model_key: Optional[str] = None, db: Session = Depends(get_db)):
+    """Label windows page."""
     key = model_key or MODEL_KEY_DEFAULT
     models = list_models()
     if key and key not in models:
