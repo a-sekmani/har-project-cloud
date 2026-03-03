@@ -6,8 +6,9 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models import PoseWindow, WindowPrediction
+from app.models import PoseWindow, WindowPrediction, Person
 from app.schemas import IngestWindowBody
+from app.utils import isoformat_utc
 
 
 def get_windows(db: Session, limit: int = 100):
@@ -42,7 +43,7 @@ def get_recent_windows_with_predictions(db: Session, limit: int = 100, model_key
             "fps": w.fps,
             "window_size": w.window_size,
             "label": w.label,
-            "created_at": w.created_at,
+            "created_at": isoformat_utc(w.created_at),
             "prediction": None,
         }
         if model_key:
@@ -117,7 +118,7 @@ def get_dashboard_windows(
     for w in windows:
         row = {
             "id": str(w.id),
-            "created_at": w.created_at.isoformat() if w.created_at else None,
+            "created_at": isoformat_utc(w.created_at),
             "device_id": w.device_id,
             "camera_id": w.camera_id,
             "track_id": w.track_id,
@@ -127,6 +128,11 @@ def get_dashboard_windows(
             "window_size": w.window_size,
             "label": w.label,
             "prediction": None,
+            # Person identification fields
+            "person_id": str(w.person_id) if w.person_id else None,
+            "person_name": w.person_name,
+            "person_conf": w.person_conf,
+            "gallery_version": w.gallery_version,
         }
         pred = latest_pred_by_window.get(w.id) if model_key else None
         if pred:
@@ -137,7 +143,7 @@ def get_dashboard_windows(
                 "pred_label_id": None,
                 "pred_label": pred.pred_label,
                 "pred_conf": pred.pred_conf,
-                "created_at": pred.created_at.isoformat() if pred.created_at else None,
+                "created_at": isoformat_utc(pred.created_at),
             }
         if only_with_predictions and row["prediction"] is None:
             continue
@@ -183,7 +189,33 @@ def create_window_prediction(
 def create_pose_window_from_ingest(db: Session, body: IngestWindowBody) -> PoseWindow:
     """Build and persist a PoseWindow from ingest body; keypoints stored as JSON string."""
     window_id = body.id if body.id is not None else uuid4()
-    created = body.created_at if body.created_at is not None else datetime.now(UTC)
+    if body.created_at is not None:
+        # Normalize to UTC: if edge sent naive datetime, treat as UTC for correct display
+        created = body.created_at if body.created_at.tzinfo is not None else body.created_at.replace(tzinfo=UTC)
+    else:
+        created = datetime.now(UTC)
+    
+    # Handle person identification from edge
+    person_id = None
+    person_name = None
+    person_conf = None
+    gallery_version = None
+    
+    if body.person is not None:
+        person_conf = body.person.person_conf
+        gallery_version = body.person.gallery_version
+        person_name = body.person.person_name
+        
+        if body.person.person_id is not None:
+            # Validate that person exists in database
+            person = db.query(Person).filter(Person.id == body.person.person_id).first()
+            if person is None:
+                raise ValueError(f"Person not found: {body.person.person_id}")
+            person_id = body.person.person_id
+            # Use current name from DB if not provided
+            if person_name is None:
+                person_name = person.name
+    
     w = PoseWindow(
         id=window_id,
         device_id=body.device_id,
@@ -196,6 +228,10 @@ def create_pose_window_from_ingest(db: Session, body: IngestWindowBody) -> PoseW
         label=body.label,
         keypoints_json=json.dumps(body.keypoints),
         created_at=created,
+        person_id=person_id,
+        person_name=person_name,
+        person_conf=person_conf,
+        gallery_version=gallery_version,
     )
     db.add(w)
     db.commit()

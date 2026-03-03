@@ -16,6 +16,9 @@ curl -H "X-API-Key: dev-key" http://localhost:8000/v1/windows
 
 - [Health](#health)
 - [Models API](#models-api)
+- [Persons API](#persons-api)
+- [Faces API](#faces-api)
+- [Face Gallery API](#face-gallery-api)
 - [Windows API](#windows-api)
 - [Activity Inference API](#activity-inference-api)
 - [Dashboard API](#dashboard-api)
@@ -93,6 +96,249 @@ Get metadata for a specific model.
 - `401 Unauthorized` - Missing or invalid API key
 - `404 Not Found` - Model not found
 - `503 Service Unavailable` - Model files missing
+
+---
+
+## Persons API
+
+### POST /v1/persons
+
+Create a new person for face recognition.
+
+**Headers:**
+| Header | Required | Description |
+|--------|----------|-------------|
+| X-API-Key | Yes | API key for authentication |
+| Content-Type | Yes | `application/json` |
+
+**Request Body:**
+```json
+{
+  "name": "Ahmad"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Ahmad",
+  "is_active": true,
+  "created_at": "2026-02-24T10:30:00.000000",
+  "face_count": 0
+}
+```
+
+---
+
+### GET /v1/persons
+
+List all persons.
+
+**Headers:**
+| Header | Required | Description |
+|--------|----------|-------------|
+| X-API-Key | Yes | API key for authentication |
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| is_active | boolean | - | Filter by active status |
+| limit | integer | 100 | Maximum results (1-500) |
+| offset | integer | 0 | Skip first N results |
+
+**Response:**
+```json
+{
+  "persons": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Ahmad",
+      "is_active": true,
+      "created_at": "2026-02-24T10:30:00.000000",
+      "face_count": 3
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### GET /v1/persons/{person_id}
+
+Get a single person by ID.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| person_id | UUID | Person identifier |
+
+**Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Ahmad",
+  "is_active": true,
+  "created_at": "2026-02-24T10:30:00.000000",
+  "face_count": 3
+}
+```
+
+---
+
+### PATCH /v1/persons/{person_id}
+
+Update a person's details.
+
+**Request Body:**
+```json
+{
+  "name": "Ahmad Updated",
+  "is_active": false
+}
+```
+
+All fields are optional. Changes to `is_active` will update the gallery version.
+
+---
+
+### DELETE /v1/persons/{person_id}
+
+Delete a person and all their face images.
+
+**Response:**
+```json
+{
+  "deleted": true,
+  "face_images_deleted": 3
+}
+```
+
+---
+
+## Faces API
+
+### POST /v1/persons/{person_id}/faces
+
+Upload face images for a person. Each image is processed to detect face and extract embedding.
+
+**Headers:**
+| Header | Required | Description |
+|--------|----------|-------------|
+| X-API-Key | Yes | API key for authentication |
+| Content-Type | Yes | `multipart/form-data` |
+
+**Request:**
+- `files`: One or more image files (JPEG, PNG, WebP)
+
+**Response:**
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "added": 3,
+  "failed": 1,
+  "errors": ["image4.jpg: No face detected"],
+  "gallery_version": "v12"
+}
+```
+
+**Validation:**
+- Each image must contain at least one face
+- If multiple faces detected, the one with highest detection score is used
+- Images without detectable faces are rejected with error message
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/v1/persons/{person_id}/faces" \
+  -H "X-API-Key: dev-key" \
+  -F "files=@face1.jpg" \
+  -F "files=@face2.jpg"
+```
+
+---
+
+### GET /v1/persons/{person_id}/faces
+
+List all face images for a person.
+
+**Response:**
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "faces": [
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "person_id": "550e8400-e29b-41d4-a716-446655440000",
+      "image_path": "550e8400.../660e8400....jpg",
+      "det_score": 0.95,
+      "quality_score": null,
+      "created_at": "2026-02-24T10:35:00.000000"
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### DELETE /v1/persons/{person_id}/faces/{face_id}
+
+Delete a specific face image.
+
+**Response:**
+```json
+{
+  "deleted": true
+}
+```
+
+---
+
+## Face Gallery API
+
+### GET /v1/face-gallery
+
+Get face gallery for edge devices. Returns all active persons with their face embeddings.
+
+**Response:**
+```json
+{
+  "gallery_version": "v12",
+  "embedding_dim": 512,
+  "threshold": 0.45,
+  "people": [
+    {
+      "person_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Ahmad",
+      "embeddings": [
+        [0.123, -0.456, ...],
+        [0.234, -0.567, ...]
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- Only returns persons with `is_active=true`
+- Only includes persons with at least one face embedding
+- `threshold` is the recommended cosine similarity threshold for matching
+- Edge devices should cache this and refresh when `gallery_version` changes
+
+---
+
+### GET /v1/face-gallery/version
+
+Get current gallery version for cache invalidation.
+
+**Response:**
+```json
+{
+  "version": "v12",
+  "created_at": "2026-02-24T10:35:00.000000"
+}
+```
 
 ---
 
@@ -336,7 +582,13 @@ Ingest a full window from the edge device. Prediction runs automatically using t
   "keypoints": [
     [[0.52, 0.18, 0.91], [0.50, 0.22, 0.88], ...],
     ...
-  ]
+  ],
+  "person": {
+    "person_id": "550e8400-e29b-41d4-a716-446655440000",
+    "person_name": "Ahmad",
+    "person_conf": 0.85,
+    "gallery_version": "v12"
+  }
 }
 ```
 
@@ -355,7 +607,31 @@ Ingest a full window from the edge device. Prediction runs automatically using t
 | mean_pose_conf | float | No | Mean pose confidence |
 | label | string | No | Pre-assigned label |
 | label_source | string | No | Label source |
-| created_at | datetime | No | Creation timestamp (ISO format) |
+| created_at | string | No | Date and time when the window was created; see **Date and time format (from edge)** below. |
+| person | object | No | Person identification from edge face recognition |
+
+**Date and time format (from edge):**
+
+Each window is stored with a single timestamp `created_at` (date + time). The Recent Windows page shows both **Date** and **Time** columns. To have correct date and time stored and displayed, the edge should send `created_at` as an ISO 8601 string **with timezone**.
+
+| Format | Example | Notes |
+|--------|---------|-------|
+| **UTC (recommended)** | `"2026-02-24T11:32:05.123Z"` or `"2026-02-24T11:32:05+00:00"` | Date = `YYYY-MM-DD`, time = `HH:mm:ss.sss`, suffix `Z` or `+00:00`. |
+| **Local with offset** | `"2026-02-24T14:32:05.123+03:00"` | Same date/time pattern with explicit offset (e.g. `+03:00`). |
+
+- **Do not** send a string without timezone (e.g. `"2026-02-24T14:32:05"`); the cloud will assume UTC and display may be wrong.
+- **Simplest:** Omit `created_at`; the cloud will use the request receive time (UTC).
+- **Python (edge):** `dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"` or use `isoformat()` on a timezone-aware datetime.
+
+See [Edge Integration](edge-integration.md) for full details on date/time format and troubleshooting.
+
+**Person Object (optional):**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| person_id | UUID | No | Identified person ID (null if unknown) |
+| person_name | string | No | Person name at time of identification |
+| person_conf | float | Yes | Face recognition confidence (0-1) |
+| gallery_version | string | No | Gallery version used for recognition |
 
 **Keypoints Format:**
 - Array of `window_size` frames
@@ -375,6 +651,10 @@ Ingest a full window from the edge device. Prediction runs automatically using t
   "window_size": 30,
   "label": null,
   "created_at": "2026-03-01T17:23:34.781775",
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "person_name": "Ahmad",
+  "person_conf": 0.85,
+  "gallery_version": "v12",
   "pred_label": "drink water",
   "pred_conf": 0.92,
   "model_key": "edge17_v6_lowlr",
@@ -408,6 +688,22 @@ curl -s -X POST "http://localhost:8000/v1/windows/ingest?model_key=edge17_v6_low
   --data-binary @window_sample.json
 ```
 
+**Troubleshooting ingest (edge camera stream):**
+
+When monitoring the cloud while the edge sends windows, check server logs. Common causes of failure:
+
+| HTTP | Cause | What to do |
+|------|--------|------------|
+| **422** | Request body validation failed | Check log: `ingest validation failed: path=... errors=...`. Typical: missing/invalid fields, wrong types, or **keypoints** shape/values. |
+| **422 (keypoints)** | Keypoints must be `[window_size]` frames × 17 keypoints × `[x, y, conf]`, each value in **[0, 1]** | Normalize keypoints on the edge: x,y by image width/height, confidence in 0–1. Do not send pixel coordinates or values outside [0,1]. |
+| **400** | `Person not found: <uuid>` | Edge sent `person.person_id` that does not exist in cloud DB. Sync face gallery to edge from cloud, or omit `person_id` when unknown. |
+| **400** | `ts_end_ms must be greater than ts_start_ms` | Fix timestamps so end > start. |
+| **409** | Window with this id already exists | Edge sent same `id` twice. Omit `id` in body to let cloud generate a new UUID, or ensure edge uses unique IDs per window. |
+| **401** | Invalid API key | Send correct `X-API-Key` (e.g. `dev-key` or value of `API_KEY` on server). |
+| **503** | Model not found | Install the requested (or default) model under `models/<model_key>/` or set `predict=false` for ingest-only. |
+
+Run the server with `LOG_LEVEL=DEBUG` for more detail, or watch for log lines: `ingest request: ...`, `ingest ok: ...`, `ingest rejected: ...`, `ingest validation failed: ...`, `ingest duplicate window id: ...`.
+
 ---
 
 ## Activity Inference API
@@ -416,7 +712,7 @@ curl -s -X POST "http://localhost:8000/v1/windows/ingest?model_key=edge17_v6_low
 
 Mock inference endpoint for activity recognition. Returns simulated predictions based on pose confidence.
 
-**Note:** This endpoint does not use the ONNX model. For real predictions, use `/v1/windows/ingest` or `/v1/windows/{id}/predict`.
+**Note:** This endpoint does not use the ONNX model. For real predictions, use `/v1/windows/ingest` or `/v1/windows/{window_id}/predict`.
 
 **Headers:**
 | Header | Required | Description |

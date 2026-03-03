@@ -7,8 +7,13 @@ Models are used to interact with the database in an object-oriented way.
 Tables:
 - devices: Stores registered edge devices
 - activity_events: Stores inference results (activity predictions)
+- persons: Stores registered persons for face recognition
+- person_faces: Stores face images and embeddings for each person
+- gallery_versions: Tracks face gallery version changes
+- pose_windows: Stores pose data windows with optional person identification
+- window_predictions: Stores ONNX model predictions for pose windows
 """
-from sqlalchemy import Column, String, Integer, BigInteger, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, BigInteger, Float, DateTime, ForeignKey, Text, Boolean, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, UTC
@@ -121,8 +126,94 @@ class ActivityEvent(Base):
     device = relationship("Device", back_populates="events")
 
 
+class Person(Base):
+    """
+    Person model for face recognition management.
+    
+    Stores registered persons who can be identified via face recognition.
+    Each person can have multiple face images/embeddings stored in PersonFace.
+    
+    Attributes:
+        id: Primary key (UUID)
+        name: Person's name (required)
+        is_active: Whether person is active in face gallery (default True)
+        created_at: Timestamp when person was registered
+        faces: Relationship to PersonFace objects (one-to-many)
+    """
+    __tablename__ = "persons"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
+
+    faces = relationship("PersonFace", back_populates="person", cascade="all, delete-orphan")
+    windows = relationship("PoseWindow", back_populates="person")
+
+
+class PersonFace(Base):
+    """
+    Face image and embedding for a person.
+    
+    Stores face images and their computed embeddings (512-dim vectors).
+    Multiple faces can be stored per person for better recognition accuracy.
+    
+    Attributes:
+        id: Primary key (UUID)
+        person_id: Foreign key to persons table
+        image_path: Relative path to stored face image
+        embedding: Face embedding as JSON list (512 floats, L2 normalized)
+        det_score: Face detection confidence score
+        quality_score: Image quality score (optional)
+        created_at: Timestamp when face was added
+    """
+    __tablename__ = "person_faces"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    person_id = Column(UUID(as_uuid=True), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_path = Column(String, nullable=False)
+    original_filename = Column(String, nullable=True)  # Used to skip duplicate uploads by name
+    embedding = Column(JSON, nullable=False)  # List of 512 floats, L2 normalized
+    det_score = Column(Float, nullable=True)
+    quality_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
+
+    person = relationship("Person", back_populates="faces")
+
+
+class GalleryVersion(Base):
+    """
+    Tracks face gallery version changes.
+    
+    A new version is created whenever faces are added/removed or
+    persons are activated/deactivated. Edge devices use this to
+    know when to refresh their local gallery cache.
+    
+    Attributes:
+        id: Primary key (UUID)
+        version: Version string (e.g., "v1", "v2")
+        created_at: Timestamp when version was created
+    """
+    __tablename__ = "gallery_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
+
+
 class PoseWindow(Base):
-    """Pose window: one time window of pose data. Can be labelled; predictions in WindowPrediction."""
+    """
+    Pose window: one time window of pose data.
+    
+    Can be labelled manually; ONNX predictions stored in WindowPrediction.
+    Optionally linked to a Person when face recognition identifies someone.
+    
+    Attributes:
+        person_id: Foreign key to persons table (nullable for unknown)
+        person_name: Cached person name at time of ingest
+        person_conf: Face recognition confidence from edge device
+        gallery_version: Face gallery version used by edge device
+    """
     __tablename__ = "pose_windows"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -137,7 +228,14 @@ class PoseWindow(Base):
     keypoints_json = Column(Text, nullable=True)  # JSON array of frames x keypoints (x,y,conf)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
 
+    # Person identification from edge face recognition
+    person_id = Column(UUID(as_uuid=True), ForeignKey("persons.id", ondelete="SET NULL"), nullable=True, index=True)
+    person_name = Column(String, nullable=True)
+    person_conf = Column(Float, nullable=True)
+    gallery_version = Column(String, nullable=True)
+
     predictions = relationship("WindowPrediction", back_populates="window", order_by="WindowPrediction.created_at.desc()")
+    person = relationship("Person", back_populates="windows")
 
 
 class WindowPrediction(Base):
