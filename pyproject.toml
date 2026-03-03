@@ -17,6 +17,10 @@ dependencies = [
     "psycopg[binary]>=3.0.0",
     "numpy>=1.24.0",
     "onnxruntime>=1.16.0",
+    "insightface>=0.7.0",
+    "opencv-python-headless>=4.8.0",
+    "pillow>=10.0.0",
+    "python-multipart>=0.0.6",
 ]
 
 [project.optional-dependencies]

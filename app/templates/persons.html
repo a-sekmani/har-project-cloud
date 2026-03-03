@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Person Management</title>
+    <style>
+        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
+        .btn:hover { background: var(--border); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn.primary:hover { filter: brightness(1.05); }
+        .btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
+        .btn.danger:hover { filter: brightness(1.1); }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; background: var(--border); }
+        .badge.version { background: #dbeafe; color: #1e40af; }
+        .stats { display: flex; flex-wrap: wrap; gap: 20px; padding: 12px 16px; margin-bottom: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; font-size: 0.875rem; }
+        .stats span { color: var(--muted); }
+        .stats strong { margin-left: 4px; }
+        .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
+        .meta .error { color: var(--red); margin-left: 16px; }
+        .meta .success { color: var(--green); margin-left: 16px; }
+        table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: var(--border); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+        tr:hover { background: #f1f5f9; }
+        .status-active { color: var(--green); font-weight: 500; }
+        .status-inactive { color: var(--muted); }
+        .nav { display: flex; gap: 12px; margin-bottom: 20px; }
+        .nav a { padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); }
+        .nav a:hover { background: var(--border); text-decoration: none; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+        .modal.show { display: flex; }
+        .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 10px; max-width: 450px; width: 100%; padding: 24px; }
+        .modal h3 { margin: 0 0 20px 0; font-size: 1.1rem; }
+        .modal .close { float: right; cursor: pointer; font-size: 1.4rem; color: var(--muted); line-height: 1; }
+        .modal .close:hover { color: var(--text); }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 0.875rem; font-weight: 500; }
+        .form-group input[type="text"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+        .form-group input[type="text"]:focus { outline: none; border-color: var(--accent); }
+        .form-check { display: flex; align-items: center; gap: 8px; }
+        .form-check input { width: 18px; height: 18px; }
+        .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+        .empty-state p { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Person Management</h1>
+        <nav class="nav">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/windows">Recent Windows</a>
+            <a href="/windows/label">Label Windows</a>
+        </nav>
+        <div class="header">
+            <div class="header-left">
+                <button type="button" class="btn primary" id="btn_add_person">+ Add Person</button>
+                <button type="button" class="btn" id="btn_refresh">Refresh</button>
+            </div>
+            <div class="header-right">
+                <div class="badge version">
+                    <span>Gallery Version:</span>
+                    <strong id="gallery_version">—</strong>
+                </div>
+            </div>
+        </div>
+        <div class="stats">
+            <span>Total Persons: <strong id="stat_total">0</strong></span>
+            <span>Active: <strong id="stat_active">0</strong></span>
+            <span>Total Faces: <strong id="stat_faces">0</strong></span>
+        </div>
+        <div class="meta">
+            <span id="last_updated">Last updated: —</span>
+            <span id="message_area"></span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Faces</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="tbody">
+                <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="modal" id="add_modal">
+        <div class="modal-content">
+            <span class="close" id="add_modal_close">&times;</span>
+            <h3>Add New Person</h3>
+            <form id="add_form">
+                <div class="form-group">
+                    <label for="add_name">Name</label>
+                    <input type="text" id="add_name" placeholder="Enter person name" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" id="add_cancel">Cancel</button>
+                    <button type="submit" class="btn primary">Add Person</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="edit_modal">
+        <div class="modal-content">
+            <span class="close" id="edit_modal_close">&times;</span>
+            <h3>Edit Person</h3>
+            <form id="edit_form">
+                <input type="hidden" id="edit_id">
+                <div class="form-group">
+                    <label for="edit_name">Name</label>
+                    <input type="text" id="edit_name" placeholder="Enter person name" required>
+                </div>
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" id="edit_active">
+                        <label for="edit_active">Active</label>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" id="edit_cancel">Cancel</button>
+                    <button type="submit" class="btn primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="delete_modal">
+        <div class="modal-content">
+            <span class="close" id="delete_modal_close">&times;</span>
+            <h3>Delete Person</h3>
+            <p>Are you sure you want to delete <strong id="delete_name"></strong>?</p>
+            <p style="color: var(--red); font-size: 0.9rem;">This will also delete all associated face images.</p>
+            <input type="hidden" id="delete_id">
+            <div class="form-actions">
+                <button type="button" class="btn" id="delete_cancel">Cancel</button>
+                <button type="button" class="btn danger" id="delete_confirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+(function() {
+    const API_KEY = {{ api_key|tojson }};
+    const API_HEADERS = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
+    let currentPersons = [];
+    let galleryRefreshTimer = null;
+
+    function showMessage(text, isError) {
+        const el = document.getElementById('message_area');
+        el.textContent = text;
+        el.className = isError ? 'error' : 'success';
+        setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + 
+               ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderTable(persons) {
+        currentPersons = persons;
+        const tbody = document.getElementById('tbody');
+        if (!persons.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><p>No persons found.</p><p>Click "Add Person" to create one.</p></td></tr>';
+            return;
+        }
+        tbody.innerHTML = persons.map(p => {
+            const statusClass = p.is_active ? 'status-active' : 'status-inactive';
+            const statusText = p.is_active ? 'Active' : 'Inactive';
+            return '<tr data-id="' + p.id + '">' +
+                '<td><a href="/persons/' + p.id + '">' + escapeHtml(p.name) + '</a></td>' +
+                '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
+                '<td>' + (p.face_count || 0) + '</td>' +
+                '<td>' + formatDate(p.created_at) + '</td>' +
+                '<td>' +
+                    '<button class="btn btn-sm btn-edit" data-id="' + p.id + '">Edit</button> ' +
+                    '<button class="btn btn-sm danger btn-delete" data-id="' + p.id + '">Delete</button>' +
+                '</td>' +
+                '</tr>';
+        }).join('');
+
+        tbody.querySelectorAll('.btn-edit').forEach(btn => {
+            btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+        });
+        tbody.querySelectorAll('.btn-delete').forEach(btn => {
+            btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
+        });
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function updateStats(persons) {
+        const total = persons.length;
+        const active = persons.filter(p => p.is_active).length;
+        const faces = persons.reduce((sum, p) => sum + (p.face_count || 0), 0);
+        document.getElementById('stat_total').textContent = total;
+        document.getElementById('stat_active').textContent = active;
+        document.getElementById('stat_faces').textContent = faces;
+    }
+
+    function fetchPersons() {
+        fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
+            .then(data => {
+                const persons = data.persons || [];
+                renderTable(persons);
+                updateStats(persons);
+                document.getElementById('last_updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            })
+            .catch(err => {
+                showMessage('Failed to load persons: ' + err.message, true);
+            });
+    }
+
+    function fetchGalleryVersion() {
+        fetch('/v1/face-gallery/version', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                document.getElementById('gallery_version').textContent = data.version || '—';
+            })
+            .catch(() => {
+                document.getElementById('gallery_version').textContent = '—';
+            });
+    }
+
+    function createPerson(name) {
+        fetch('/v1/persons', {
+            method: 'POST',
+            headers: API_HEADERS,
+            body: JSON.stringify({ name: name })
+        })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => {
+                showMessage('Person "' + data.name + '" created successfully.', false);
+                closeModal('add_modal');
+                fetchPersons();
+            })
+            .catch(err => {
+                showMessage('Failed to create person: ' + err.message, true);
+            });
+    }
+
+    function updatePerson(id, name, isActive) {
+        const body = {};
+        if (name !== undefined) body.name = name;
+        if (isActive !== undefined) body.is_active = isActive;
+        
+        fetch('/v1/persons/' + id, {
+            method: 'PATCH',
+            headers: API_HEADERS,
+            body: JSON.stringify(body)
+        })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(() => {
+                showMessage('Person updated successfully.', false);
+                closeModal('edit_modal');
+                fetchPersons();
+            })
+            .catch(err => {
+                showMessage('Failed to update person: ' + err.message, true);
+            });
+    }
+
+    function deletePerson(id) {
+        fetch('/v1/persons/' + id, {
+            method: 'DELETE',
+            headers: { 'X-API-Key': API_KEY }
+        })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r; })
+            .then(() => {
+                showMessage('Person deleted successfully.', false);
+                closeModal('delete_modal');
+                fetchPersons();
+                fetchGalleryVersion();
+            })
+            .catch(err => {
+                showMessage('Failed to delete person: ' + err.message, true);
+            });
+    }
+
+    function openEditModal(id) {
+        const person = currentPersons.find(p => p.id === id);
+        if (!person) return;
+        document.getElementById('edit_id').value = id;
+        document.getElementById('edit_name').value = person.name;
+        document.getElementById('edit_active').checked = person.is_active;
+        document.getElementById('edit_modal').classList.add('show');
+    }
+
+    function openDeleteModal(id) {
+        const person = currentPersons.find(p => p.id === id);
+        if (!person) return;
+        document.getElementById('delete_id').value = id;
+        document.getElementById('delete_name').textContent = person.name;
+        document.getElementById('delete_modal').classList.add('show');
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.remove('show');
+    }
+
+    document.getElementById('btn_add_person').addEventListener('click', () => {
+        document.getElementById('add_name').value = '';
+        document.getElementById('add_modal').classList.add('show');
+        document.getElementById('add_name').focus();
+    });
+
+    document.getElementById('btn_refresh').addEventListener('click', () => {
+        fetchPersons();
+        fetchGalleryVersion();
+    });
+
+    document.getElementById('add_form').addEventListener('submit', e => {
+        e.preventDefault();
+        const name = document.getElementById('add_name').value.trim();
+        if (name) createPerson(name);
+    });
+
+    document.getElementById('edit_form').addEventListener('submit', e => {
+        e.preventDefault();
+        const id = document.getElementById('edit_id').value;
+        const name = document.getElementById('edit_name').value.trim();
+        const isActive = document.getElementById('edit_active').checked;
+        if (id && name) updatePerson(id, name, isActive);
+    });
+
+    document.getElementById('delete_confirm').addEventListener('click', () => {
+        const id = document.getElementById('delete_id').value;
+        if (id) deletePerson(id);
+    });
+
+    ['add_modal_close', 'add_cancel'].forEach(id => {
+        document.getElementById(id).addEventListener('click', () => closeModal('add_modal'));
+    });
+    ['edit_modal_close', 'edit_cancel'].forEach(id => {
+        document.getElementById(id).addEventListener('click', () => closeModal('edit_modal'));
+    });
+    ['delete_modal_close', 'delete_cancel'].forEach(id => {
+        document.getElementById(id).addEventListener('click', () => closeModal('delete_modal'));
+    });
+
+    ['add_modal', 'edit_modal', 'delete_modal'].forEach(modalId => {
+        document.getElementById(modalId).addEventListener('click', e => {
+            if (e.target.id === modalId) closeModal(modalId);
+        });
+    });
+
+    fetchPersons();
+    fetchGalleryVersion();
+    galleryRefreshTimer = setInterval(fetchGalleryVersion, 10000);
+})();
+    </script>
+</body>
+</html>

@@ -111,14 +111,14 @@
         <table>
             <thead>
                 <tr>
+                    <th>Date</th>
                     <th>Time</th>
                     <th>Window ID</th>
                     <th>Device</th>
-                    <th>Camera</th>
-                    <th>Track</th>
-                    <th>Time Range</th>
                     <th>FPS</th>
-                    <th>Size</th>
+                    <th>Track</th>
+                    <th>Person</th>
+                    <th>Face Conf</th>
                     <th>Predicted</th>
                     <th>Pred Conf</th>
                     <th>Model</th>
@@ -163,13 +163,16 @@
         return params;
     }
 
+    function formatDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
     function formatTime(iso) {
         if (!iso) return '—';
         const d = new Date(iso);
-        const now = Date.now();
-        const sec = Math.floor((now - d.getTime()) / 1000);
-        const t = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        return sec <= 60 ? t + ' (' + sec + 's ago)' : t;
+        return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
     function timeRange(tsStart, tsEnd) {
@@ -223,16 +226,20 @@
             const pred = row.prediction || {};
             const conf = pred.pred_conf;
             const modelStr = pred.model_key ? (pred.model_key + (pred.model_version ? ' @ ' + pred.model_version : '')) : '—';
-            const timeRangeStr = timeRange(row.ts_start_ms, row.ts_end_ms);
+            const personName = row.person_name || (row.person_id ? shortId(row.person_id) : '—');
+            const personConf = row.person_conf;
+            const personCell = row.person_id 
+                ? '<a href="/persons/' + row.person_id + '">' + personName + '</a>'
+                : personName;
             return '<tr data-id="' + (row.id || '') + '">' +
+                '<td>' + formatDate(row.created_at) + '</td>' +
                 '<td>' + formatTime(row.created_at) + '</td>' +
                 '<td class="win-id">' + shortId(row.id) + '</td>' +
-                '<td><a href="#" class="filter-device" data-device="' + (row.device_id || '') + '">' + (row.device_id || '—') + '</a></td>' +
-                '<td>' + (row.camera_id ?? '—') + '</td>' +
+                '<td>' + (row.device_id || '—') + '</td>' +
+                '<td>' + (row.fps != null ? row.fps : '—') + '</td>' +
                 '<td>' + (row.track_id ?? '—') + '</td>' +
-                '<td>' + timeRangeStr + '</td>' +
-                '<td>' + (row.fps ?? '—') + '</td>' +
-                '<td>' + (row.window_size ?? '—') + '</td>' +
+                '<td>' + personCell + '</td>' +
+                '<td><span class="' + confClass(personConf) + '">' + (personConf != null ? personConf.toFixed(2) : '—') + '</span></td>' +
                 '<td>' + (pred.pred_label || '—') + '</td>' +
                 '<td><span class="' + confClass(conf) + '">' + (conf != null ? conf.toFixed(2) : '—') + '</span></td>' +
                 '<td>' + modelStr + '</td>' +
@@ -240,9 +247,6 @@
                 '<a href="/windows/label?model_key=' + encodeURIComponent(model) + '&window_id=' + encodeURIComponent(row.id || '') + '" class="btn btn-sm">Label</a>' +
                 '</td></tr>';
         }).join('');
-        tbody.querySelectorAll('.filter-device').forEach(a => {
-            a.addEventListener('click', e => { e.preventDefault(); document.getElementById('filter_device').value = a.dataset.device || ''; fetchData(); });
-        });
     }
 
     function updateStats(rows) {

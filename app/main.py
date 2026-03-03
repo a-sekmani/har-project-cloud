@@ -2,7 +2,10 @@
 from uuid import UUID
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, Query
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.exceptions import RequestValidationError
+from pathlib import Path
 from typing import Tuple, Optional
 import uuid
 from sqlalchemy.orm import Session
@@ -23,6 +26,7 @@ from app.schemas import (
 )
 from app.logging import log_inference_request, get_logger
 from app.health import router as health_router
+from app.face.routes import router as face_router
 from app.services import (
     create_pose_window_from_ingest,
     get_dashboard_windows,
@@ -32,14 +36,33 @@ from app.services import (
     run_predict_for_window,
     update_window_label,
 )
+from app.utils import isoformat_utc
 
 app = FastAPI(title="Cloud HAR API", version="1.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
-# Include health router
+# Mount static files for face images
+FACE_IMAGES_DIR = Path("data/person_faces")
+FACE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/face-images", StaticFiles(directory=str(FACE_IMAGES_DIR)), name="face-images")
+
+# Include routers
 app.include_router(health_router)
+app.include_router(face_router)
 
 logger = get_logger("main")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log validation errors (e.g. ingest body) for debugging edge stream issues."""
+    logger.warning(
+        "ingest validation failed: path=%s errors=%s",
+        request.url.path,
+        exc.errors(),
+    )
+    from fastapi.exception_handlers import request_validation_exception_handler
+    return await request_validation_exception_handler(request, exc)
 
 
 def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")) -> str:
@@ -148,7 +171,7 @@ async def get_model(model_key: str, api_key: str = Depends(verify_api_key)):
 @app.get("/v1/windows")
 async def list_windows(limit: int = 100, api_key: str = Depends(verify_api_key), db: Session = Depends(get_db)):
     windows = get_windows(db, limit=limit)
-    return {"windows": [{"id": str(w.id), "device_id": w.device_id, "camera_id": w.camera_id, "track_id": w.track_id, "ts_start_ms": w.ts_start_ms, "ts_end_ms": w.ts_end_ms, "fps": w.fps, "window_size": w.window_size, "label": w.label, "created_at": w.created_at.isoformat() if w.created_at else None} for w in windows]}
+    return {"windows": [{"id": str(w.id), "device_id": w.device_id, "camera_id": w.camera_id, "track_id": w.track_id, "ts_start_ms": w.ts_start_ms, "ts_end_ms": w.ts_end_ms, "fps": w.fps, "window_size": w.window_size, "label": w.label, "created_at": isoformat_utc(w.created_at)} for w in windows]}
 
 
 @app.get("/v1/dashboard/windows")
@@ -190,7 +213,7 @@ async def get_window(window_id: UUID, api_key: str = Depends(verify_api_key), db
     w = get_window_by_id(db, window_id)
     if w is None:
         raise HTTPException(status_code=404, detail="Window not found")
-    return {"id": str(w.id), "device_id": w.device_id, "camera_id": w.camera_id, "track_id": w.track_id, "ts_start_ms": w.ts_start_ms, "ts_end_ms": w.ts_end_ms, "fps": w.fps, "window_size": w.window_size, "label": w.label, "created_at": w.created_at.isoformat() if w.created_at else None}
+    return {"id": str(w.id), "device_id": w.device_id, "camera_id": w.camera_id, "track_id": w.track_id, "ts_start_ms": w.ts_start_ms, "ts_end_ms": w.ts_end_ms, "fps": w.fps, "window_size": w.window_size, "label": w.label, "created_at": isoformat_utc(w.created_at)}
 
 
 @app.post("/v1/windows/{window_id}/label")
@@ -237,14 +260,27 @@ async def ingest_window(
     db: Session = Depends(get_db),
 ):
     """Ingest a full window from edge; by default run ONNX and store prediction."""
+    logger.info(
+        "ingest request: device_id=%s camera_id=%s track_id=%s window_size=%s person=%s",
+        body.device_id,
+        body.camera_id,
+        body.track_id,
+        body.window_size,
+        "yes" if body.person else "no",
+    )
     try:
         w = create_pose_window_from_ingest(db, body)
     except IntegrityError:
         db.rollback()
+        logger.warning("ingest duplicate window id: device_id=%s", body.device_id)
         raise HTTPException(
             status_code=409,
             detail="Window with this id already exists. Omit 'id' in the body to create a new window.",
         )
+    except ValueError as e:
+        db.rollback()
+        logger.warning("ingest rejected: %s", e)
+        raise HTTPException(status_code=400, detail=str(e))
     out = {
         "id": str(w.id),
         "device_id": w.device_id,
@@ -255,7 +291,12 @@ async def ingest_window(
         "fps": w.fps,
         "window_size": w.window_size,
         "label": w.label,
-        "created_at": w.created_at,
+        "created_at": isoformat_utc(w.created_at),
+        # Person identification
+        "person_id": str(w.person_id) if w.person_id else None,
+        "person_name": w.person_name,
+        "person_conf": w.person_conf,
+        "gallery_version": w.gallery_version,
     }
     if predict:
         key = model_key or MODEL_KEY_DEFAULT
@@ -280,6 +321,13 @@ async def ingest_window(
             raise HTTPException(status_code=400, detail=str(e))
         except FileNotFoundError as e:
             raise HTTPException(status_code=503, detail=str(e))
+    logger.info(
+        "ingest ok: id=%s device_id=%s person_id=%s pred_label=%s",
+        w.id,
+        w.device_id,
+        w.person_id,
+        out.get("pred_label") if predict else None,
+    )
     return out
 
 
@@ -324,4 +372,23 @@ async def label_page(request: Request, model_key: Optional[str] = None, db: Sess
         "model_key": key,
         "models": models,
         "api_key": API_KEY,
+    })
+
+
+@app.get("/persons", response_class=HTMLResponse)
+async def persons_page(request: Request):
+    """Person management page."""
+    return templates.TemplateResponse("persons.html", {
+        "request": request,
+        "api_key": API_KEY,
+    })
+
+
+@app.get("/persons/{person_id}", response_class=HTMLResponse)
+async def person_detail_page(request: Request, person_id: str):
+    """Person detail page."""
+    return templates.TemplateResponse("person_detail.html", {
+        "request": request,
+        "api_key": API_KEY,
+        "person_id": person_id,
     })

@@ -125,6 +125,14 @@ class PredictWindowBody(BaseModel):
     return_probs: bool = Field(default=False, description="Include full class probabilities in response")
 
 
+class PersonIngestData(BaseModel):
+    """Person identification data from edge device (face recognition result)."""
+    person_id: Optional[UUID] = Field(None, description="Identified person ID (null if unknown)")
+    person_name: Optional[str] = Field(None, description="Person name at time of identification")
+    person_conf: float = Field(..., ge=0.0, le=1.0, description="Face recognition confidence")
+    gallery_version: Optional[str] = Field(None, description="Gallery version used for recognition")
+
+
 class IngestWindowBody(BaseModel):
     """Body for POST /v1/windows/ingest — full window from edge (HAR-WindowNet contract)."""
     device_id: str = Field(..., min_length=1)
@@ -142,6 +150,9 @@ class IngestWindowBody(BaseModel):
     label: Optional[str] = None
     label_source: Optional[str] = None
     created_at: Optional[datetime] = None
+
+    # Person identification from edge face recognition
+    person: Optional[PersonIngestData] = Field(None, description="Person identification from edge")
 
     @model_validator(mode='after')
     def validate_ts(self):

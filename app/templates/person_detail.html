@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Person Details</title>
+    <style>
+        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 8px 0; color: var(--text); }
+        h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 16px 0; color: var(--text); }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 20px; font-size: 0.9rem; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
+        .btn:hover { background: var(--border); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn.primary:hover { filter: brightness(1.05); }
+        .btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
+        .btn.danger:hover { filter: brightness(1.1); }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; background: var(--border); }
+        .badge.version { background: #dbeafe; color: #1e40af; }
+        .badge.active { background: #dcfce7; color: #166534; }
+        .badge.inactive { background: #f1f5f9; color: #64748b; }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .info-item { }
+        .info-item label { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+        .info-item .value { font-size: 1rem; font-weight: 500; }
+        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .faces-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+        .face-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; position: relative; }
+        .face-card img { width: 100%; height: 150px; object-fit: cover; display: block; }
+        .face-card .face-info { padding: 10px; font-size: 0.75rem; color: var(--muted); }
+        .face-card .face-info .score { color: var(--green); font-weight: 500; }
+        .face-card .delete-btn { position: absolute; top: 8px; right: 8px; background: rgba(220, 38, 38, 0.9); color: #fff; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; font-size: 1rem; line-height: 1; display: flex; align-items: center; justify-content: center; opacity: 0.9; transition: opacity 0.2s; }
+        .face-card:hover .delete-btn { opacity: 1; }
+        .face-card .delete-btn:hover { background: var(--red); }
+        .upload-area { border: 2px dashed var(--border); border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--accent); background: #f0f9ff; }
+        .upload-area input { display: none; }
+        .upload-area p { margin: 8px 0; color: var(--muted); }
+        .upload-area .icon { font-size: 2rem; margin-bottom: 8px; }
+        .upload-progress { margin-top: 16px; }
+        .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+        .progress-bar .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+        .upload-result { margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 0.875rem; }
+        .upload-result.success { background: #dcfce7; color: #166534; }
+        .upload-result.error { background: #fee2e2; color: #991b1b; }
+        .upload-result ul { margin: 8px 0 0 0; padding-left: 20px; }
+        .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
+        .meta .error { color: var(--red); margin-left: 16px; }
+        .meta .success { color: var(--green); margin-left: 16px; }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+        .modal.show { display: flex; }
+        .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 10px; max-width: 400px; width: 100%; padding: 24px; }
+        .modal h3 { margin: 0 0 16px 0; font-size: 1.1rem; }
+        .modal .close { float: right; cursor: pointer; font-size: 1.4rem; color: var(--muted); line-height: 1; }
+        .modal .close:hover { color: var(--text); }
+        .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .loading { text-align: center; padding: 40px; color: var(--muted); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/persons" class="back-link">&larr; Back to Persons</a>
+        
+        <div id="person_info" class="card">
+            <div class="loading">Loading person details...</div>
+        </div>
+
+        <div class="card">
+            <div class="section-header">
+                <h2>Face Images</h2>
+                <div class="badge version">
+                    <span>Gallery Version:</span>
+                    <strong id="gallery_version">—</strong>
+                </div>
+            </div>
+
+            <div class="upload-area" id="upload_area">
+                <input type="file" id="file_input" multiple accept="image/*">
+                <div class="icon">📷</div>
+                <p><strong>Click to upload</strong> or drag and drop</p>
+                <p style="font-size: 0.8rem;">Supports multiple images (JPG, PNG). New uploads are <strong>added</strong> to existing faces.</p>
+            </div>
+
+            <div id="upload_progress" class="upload-progress" style="display: none;">
+                <div class="progress-bar"><div class="fill" id="progress_fill" style="width: 0%;"></div></div>
+                <p style="font-size: 0.8rem; color: var(--muted); margin-top: 8px;">Uploading... <span id="progress_text">0%</span></p>
+            </div>
+
+            <div id="upload_result" style="display: none;"></div>
+
+            <div class="meta" style="margin-top: 16px;">
+                <span id="faces_last_updated">Last updated: —</span>
+                <span id="faces_message"></span>
+            </div>
+
+            <div id="faces_grid" class="faces-grid" style="margin-top: 16px;">
+                <div class="empty-state">Loading faces...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="delete_face_modal">
+        <div class="modal-content">
+            <span class="close" id="delete_face_modal_close">&times;</span>
+            <h3>Delete Face</h3>
+            <p>Are you sure you want to delete this face image?</p>
+            <input type="hidden" id="delete_face_id">
+            <div class="form-actions">
+                <button type="button" class="btn" id="delete_face_cancel">Cancel</button>
+                <button type="button" class="btn danger" id="delete_face_confirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+(function() {
+    const API_KEY = {{ api_key|tojson }};
+    const PERSON_ID = {{ person_id|tojson }};
+    const API_HEADERS = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
+    let currentPerson = null;
+    let currentFaces = [];
+
+    function showMessage(elementId, text, isError) {
+        const el = document.getElementById(elementId);
+        el.textContent = text;
+        el.className = isError ? 'error' : 'success';
+        setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + 
+               ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function renderPersonInfo(person) {
+        currentPerson = person;
+        document.title = person.name + ' - Person Details';
+        const statusBadge = person.is_active 
+            ? '<span class="badge active">Active</span>' 
+            : '<span class="badge inactive">Inactive</span>';
+        
+        document.getElementById('person_info').innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <h1>${escapeHtml(person.name)}</h1>
+                ${statusBadge}
+            </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>Person ID</label>
+                    <div class="value" style="font-family: monospace; font-size: 0.85rem;">${person.id}</div>
+                </div>
+                <div class="info-item">
+                    <label>Face Count</label>
+                    <div class="value" id="face_count_display">${person.face_count || 0}</div>
+                </div>
+                <div class="info-item">
+                    <label>Created</label>
+                    <div class="value">${formatDate(person.created_at)}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderFaces(faces) {
+        currentFaces = faces;
+        const grid = document.getElementById('faces_grid');
+        
+        if (!faces.length) {
+            grid.innerHTML = '<div class="empty-state"><p>No face images yet.</p><p>Upload images using the area above.</p></div>';
+            return;
+        }
+
+        grid.innerHTML = faces.map(face => {
+            const imagePath = face.image_path ? ('/face-images/' + String(face.image_path).replace(/\\/g, '/')) : ('/face-images/' + PERSON_ID + '/' + face.id + '.jpg');
+            const detScore = face.det_score != null ? (face.det_score * 100).toFixed(1) + '%' : '—';
+            return `
+                <div class="face-card" data-id="${face.id}">
+                    <img src="${imagePath}" alt="Face" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23e2e8f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%2364748b%22 font-size=%2212%22>No Image</text></svg>'">
+                    <button class="delete-btn" data-id="${face.id}" title="Delete face">&times;</button>
+                    <div class="face-info">
+                        <div>Detection: <span class="score">${detScore}</span></div>
+                        <div style="font-size: 0.7rem; color: var(--muted);">${formatDate(face.created_at)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        grid.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                openDeleteFaceModal(btn.dataset.id);
+            });
+        });
+
+        document.getElementById('faces_last_updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function fetchPerson() {
+        fetch('/v1/persons/' + PERSON_ID, { headers: { 'X-API-Key': API_KEY } })
+            .then(r => {
+                if (!r.ok) {
+                    if (r.status === 404) throw new Error('Person not found');
+                    throw new Error(r.status + ' ' + r.statusText);
+                }
+                return r.json();
+            })
+            .then(person => {
+                renderPersonInfo(person);
+            })
+            .catch(err => {
+                document.getElementById('person_info').innerHTML = `
+                    <div class="empty-state">
+                        <p style="color: var(--red);">Error: ${escapeHtml(err.message)}</p>
+                        <p><a href="/persons">Return to Persons list</a></p>
+                    </div>
+                `;
+            });
+    }
+
+    function fetchFaces() {
+        fetch('/v1/persons/' + PERSON_ID + '/faces', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => {
+                renderFaces(data.faces || []);
+                if (document.getElementById('face_count_display')) {
+                    document.getElementById('face_count_display').textContent = data.total || 0;
+                }
+            })
+            .catch(err => {
+                document.getElementById('faces_grid').innerHTML = `<div class="empty-state" style="color: var(--red);">Failed to load faces: ${err.message}</div>`;
+            });
+    }
+
+    function fetchGalleryVersion() {
+        fetch('/v1/face-gallery/version', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                document.getElementById('gallery_version').textContent = data.version || '—';
+            })
+            .catch(() => {
+                document.getElementById('gallery_version').textContent = '—';
+            });
+    }
+
+    function uploadFiles(files) {
+        if (!files.length) return;
+
+        const progressDiv = document.getElementById('upload_progress');
+        const resultDiv = document.getElementById('upload_result');
+        const progressFill = document.getElementById('progress_fill');
+        const progressText = document.getElementById('progress_text');
+
+        progressDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
+        progressFill.style.width = '0%';
+        progressText.textContent = '0%';
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('files', files[i]);
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/v1/persons/' + PERSON_ID + '/faces');
+        xhr.setRequestHeader('X-API-Key', API_KEY);
+
+        xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                progressFill.style.width = pct + '%';
+                progressText.textContent = pct + '%';
+            }
+        };
+
+        xhr.onload = function() {
+            progressDiv.style.display = 'none';
+            
+            if (xhr.status >= 200 && xhr.status < 300) {
+                const data = JSON.parse(xhr.responseText);
+                let html = '';
+                
+                if (data.added > 0) {
+                    html += `<div class="upload-result success">Successfully added ${data.added} face(s).</div>`;
+                }
+                if (data.skipped > 0) {
+                    html += `<div class="upload-result success">Skipped ${data.skipped} file(s) (same filename already exists).</div>`;
+                }
+                if (data.errors && data.errors.length > 0) {
+                    html += `<div class="upload-result error">
+                        <strong>${data.failed} file(s) failed:</strong>
+                        <ul>${data.errors.map(e => '<li>' + escapeHtml(e) + '</li>').join('')}</ul>
+                    </div>`;
+                }
+                
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+                
+                fetchFaces();
+                fetchPerson();
+                fetchGalleryVersion();
+            } else {
+                let errorMsg = 'Upload failed';
+                try {
+                    const errData = JSON.parse(xhr.responseText);
+                    errorMsg = errData.detail || errorMsg;
+                } catch(e) {}
+                resultDiv.innerHTML = `<div class="upload-result error">${escapeHtml(errorMsg)}</div>`;
+                resultDiv.style.display = 'block';
+            }
+
+            setTimeout(() => { resultDiv.style.display = 'none'; }, 8000);
+        };
+
+        xhr.onerror = function() {
+            progressDiv.style.display = 'none';
+            resultDiv.innerHTML = '<div class="upload-result error">Network error during upload.</div>';
+            resultDiv.style.display = 'block';
+        };
+
+        xhr.send(formData);
+    }
+
+    function deleteFace(faceId) {
+        fetch('/v1/persons/' + PERSON_ID + '/faces/' + faceId, {
+            method: 'DELETE',
+            headers: { 'X-API-Key': API_KEY }
+        })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r; })
+            .then(() => {
+                showMessage('faces_message', 'Face deleted successfully.', false);
+                closeModal('delete_face_modal');
+                fetchFaces();
+                fetchPerson();
+                fetchGalleryVersion();
+            })
+            .catch(err => {
+                showMessage('faces_message', 'Failed to delete face: ' + err.message, true);
+            });
+    }
+
+    function openDeleteFaceModal(faceId) {
+        document.getElementById('delete_face_id').value = faceId;
+        document.getElementById('delete_face_modal').classList.add('show');
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.remove('show');
+    }
+
+    const uploadArea = document.getElementById('upload_area');
+    const fileInput = document.getElementById('file_input');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    
+    fileInput.addEventListener('change', e => {
+        if (e.target.files.length) uploadFiles(e.target.files);
+        e.target.value = '';
+    });
+
+    uploadArea.addEventListener('dragover', e => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', e => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', e => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+    });
+
+    document.getElementById('delete_face_confirm').addEventListener('click', () => {
+        const faceId = document.getElementById('delete_face_id').value;
+        if (faceId) deleteFace(faceId);
+    });
+
+    ['delete_face_modal_close', 'delete_face_cancel'].forEach(id => {
+        document.getElementById(id).addEventListener('click', () => closeModal('delete_face_modal'));
+    });
+
+    document.getElementById('delete_face_modal').addEventListener('click', e => {
+        if (e.target.id === 'delete_face_modal') closeModal('delete_face_modal');
+    });
+
+    fetchPerson();
+    fetchFaces();
+    fetchGalleryVersion();
+    setInterval(fetchGalleryVersion, 10000);
+})();
+    </script>
+</body>
+</html>
