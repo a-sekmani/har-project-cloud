@@ -12,6 +12,12 @@
         h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
+        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); }
+        .site-logo:hover { text-decoration: none; color: var(--accent); }
+        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
+        .site-nav a:hover { background: var(--border); text-decoration: none; }
         .header { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
         .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
         .header select, .header input[type="number"], .header input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; }
@@ -46,6 +52,15 @@
 </head>
 <body>
     <div class="container">
+        <header class="site-header">
+            <a href="/dashboard" class="site-logo">HAR Cloud App</a>
+            <nav class="site-nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/windows">Recent Windows</a>
+                <a href="/windows/label">Label Windows</a>
+                <a href="/persons">Person Management</a>
+            </nav>
+        </header>
         <h1>Recent Windows</h1>
         <div class="header">
             <div>

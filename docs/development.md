@@ -38,11 +38,17 @@ har-project-cloud/
     person_faces/        # Stored face images (served at /face-images)
   scripts/
     seed_windows.py      # Insert pose_windows from JSON/JSONL
+  samples/               # Sample request payloads (inference, manual testing)
+    test_request.json, test_request_valid.json, test_request_low_conf.json
   tests/
-    test_health.py, test_infer_schema.py, test_api_edge_cases.py, test_golden_edge.py
-    test_normalize.py, test_multiple_devices.py, test_response_format.py
-    test_face_api.py, test_ingest.py
-    fixtures/
+    conftest.py           # Pytest config (e.g. DATABASE_URL=SQLite)
+    fixtures/             # Shared test data (e.g. golden_edge_payload.json)
+    unit/                 # Unit tests
+      test_health.py, test_normalize.py, test_infer_schema.py, test_database.py
+    api/                  # API / endpoint tests
+      test_ingest.py, test_face_api.py, test_golden_edge.py, test_multiple_people.py
+    integration/          # Integration tests
+      test_integration.py
   models/                # ONNX models: <model_key>/model.onnx, label_map.json, model_meta.json
   docs/                  # Documentation
   alembic/               # Database migrations
@@ -66,6 +72,18 @@ python scripts/seed_windows.py --from labelled.jsonl [--limit 50]
 
 **Example:** Seed 20 windows, then open `http://localhost:8000/windows` and run predict on the new windows.
 
+### test_scenarios.sh
+
+Runs manual scenarios for the inference API (e.g. multiple people, multiple devices). Run from the project root. Uses sample payloads from `samples/`:
+
+- `samples/test_request.json` — used in the "Multiple Devices" scenario (`POST /v1/activity/infer`).
+
+Other samples in `samples/` (`test_request_valid.json`, `test_request_low_conf.json`) are available for ad‑hoc or manual testing.
+
+```bash
+./test_scenarios.sh
+```
+
 ## Testing
 
 Run tests:
@@ -74,11 +92,24 @@ Run tests:
 source venv/bin/activate   # or venv\Scripts\activate on Windows
 pytest
 pytest -v
-pytest tests/test_health.py tests/test_face_api.py -v
+pytest tests/unit/test_health.py tests/api/test_face_api.py -v
+pytest tests/unit/ tests/api/ -v
 pytest --cov=app --cov-report=term-missing
 ```
 
-Test modules: `test_health.py`, `test_infer_schema.py`, `test_api_edge_cases.py`, `test_golden_edge.py`, `test_normalize.py`, `test_multiple_devices.py`, `test_response_format.py`, `test_face_api.py`, `test_ingest.py`. Many tests use in-memory SQLite; some may expect PostgreSQL (e.g. `DATABASE_URL`).
+Test layout:
+- **unit/** — `test_health.py`, `test_normalize.py`, `test_infer_schema.py`, `test_database.py`
+- **api/** — `test_ingest.py`, `test_face_api.py`, `test_golden_edge.py`, `test_multiple_people.py`
+- **integration/** — `test_integration.py`
+
+Many tests use in-memory SQLite; some may expect PostgreSQL (e.g. `DATABASE_URL`).
+
+## Web UI
+
+All pages use a consistent layout (max-width 1600px) and a shared **site header** with the app name **HAR Cloud App** and navigation: **Dashboard**, **Recent Windows**, **Label Windows**, **Person Management**. This allows moving between the dashboard, windows list, labeling, and person/face management from any page.
+
+- **Person Management** (`/persons`) and **Person detail** (`/persons/{id}`): show **Gallery last updated** (date/time) instead of a version number, for when the face gallery was last changed.
+- **Label Windows** (`/windows/label`): table columns include **Person** (name, link to person if identified) and **Face Conf** (face recognition confidence), in addition to Time, Window ID, Device, Camera, Track, Activity, Set label, Predicted, Pred Conf, Match?, Actions.
 
 ## Logging
 

@@ -8,11 +8,17 @@
         :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
         * { box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
         h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 8px 0; color: var(--text); }
         h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 16px 0; color: var(--text); }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
+        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); }
+        .site-logo:hover { text-decoration: none; color: var(--accent); }
+        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
+        .site-nav a:hover { background: var(--border); text-decoration: none; }
         .back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 20px; font-size: 0.9rem; }
         .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
         .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
@@ -67,6 +73,15 @@
 </head>
 <body>
     <div class="container">
+        <header class="site-header">
+            <a href="/dashboard" class="site-logo">HAR Cloud App</a>
+            <nav class="site-nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/windows">Recent Windows</a>
+                <a href="/windows/label">Label Windows</a>
+                <a href="/persons">Person Management</a>
+            </nav>
+        </header>
         <a href="/persons" class="back-link">&larr; Back to Persons</a>
         
         <div id="person_info" class="card">
@@ -77,7 +92,7 @@
             <div class="section-header">
                 <h2>Face Images</h2>
                 <div class="badge version">
-                    <span>Gallery Version:</span>
+                    <span>Gallery last updated:</span>
                     <strong id="gallery_version">—</strong>
                 </div>
             </div>
@@ -251,7 +266,13 @@
         fetch('/v1/face-gallery/version', { headers: { 'X-API-Key': API_KEY } })
             .then(r => r.ok ? r.json() : Promise.reject())
             .then(data => {
-                document.getElementById('gallery_version').textContent = data.version || '—';
+                const el = document.getElementById('gallery_version');
+                if (data.created_at) {
+                    const d = new Date(data.created_at);
+                    el.textContent = d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+                } else {
+                    el.textContent = '—';
+                }
             })
             .catch(() => {
                 document.getElementById('gallery_version').textContent = '—';

@@ -11,8 +11,8 @@ import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from app.config import API_KEY, MODEL_KEY_DEFAULT
-from app.database import get_db
+from app.config import API_KEY, MODEL_KEY_DEFAULT, DATABASE_URL
+from app.database import get_db, engine, Base
 from app.models_meta import list_available as list_models, get_labels_and_version
 from app.schemas import (
     InferenceRequestSchema,
@@ -51,6 +51,15 @@ app.include_router(health_router)
 app.include_router(face_router)
 
 logger = get_logger("main")
+
+
+@app.on_event("startup")
+def ensure_tables():
+    """With SQLite, create tables from models (no Alembic). With PostgreSQL use alembic upgrade head."""
+    if "sqlite" in DATABASE_URL.lower():
+        import app.models  # noqa: F401 - register tables with Base
+        Base.metadata.create_all(bind=engine)
+        logger.info("SQLite: created tables from models.")
 
 
 @app.exception_handler(RequestValidationError)

@@ -12,6 +12,12 @@
         h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
+        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); }
+        .site-logo:hover { text-decoration: none; color: var(--accent); }
+        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
+        .site-nav a:hover { background: var(--border); text-decoration: none; }
         .header { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
         .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
         .header select, .header input[type="number"], .header input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; }
@@ -32,11 +38,22 @@
         .win-id { font-family: ui-monospace, monospace; font-size: 0.85em; }
         .btn-sm { padding: 4px 8px; font-size: 0.75rem; margin: 0 2px; }
         .row-error { color: var(--red); font-size: 0.8rem; }
+        .conf-high { color: var(--green); }
+        .conf-mid { color: var(--orange); }
+        .conf-low { color: var(--red); }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/windows" class="back-link">← Back to Windows</a>
+        <header class="site-header">
+            <a href="/dashboard" class="site-logo">HAR Cloud App</a>
+            <nav class="site-nav">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/windows">Recent Windows</a>
+                <a href="/windows/label">Label Windows</a>
+                <a href="/persons">Person Management</a>
+            </nav>
+        </header>
         <h1>Label Windows</h1>
         <div class="header">
             <div>
@@ -103,6 +120,8 @@
                     <th>Device</th>
                     <th>Camera</th>
                     <th>Track</th>
+                    <th>Person</th>
+                    <th>Face Conf</th>
                     <th>Activity</th>
                     <th>Set label</th>
                     <th>Predicted</th>
@@ -112,7 +131,7 @@
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="12" style="text-align:center;color:var(--muted);">Loading…</td></tr>
+                <tr><td colspan="14" style="text-align:center;color:var(--muted);">Loading…</td></tr>
             </tbody>
         </table>
     </div>
@@ -151,6 +170,13 @@
 
     function shortId(id) { return id ? id.slice(0, 8) : '—'; }
 
+    function confClass(c) {
+        if (c == null) return '';
+        if (c < 0.5) return 'conf-low';
+        if (c < 0.75) return 'conf-mid';
+        return 'conf-high';
+    }
+
     function matchSymbol(row) {
         const label = (row.label || '').trim();
         const pred = (row.prediction || {}).pred_label;
@@ -162,7 +188,7 @@
         currentRows = rows;
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(row => {
@@ -170,6 +196,11 @@
             const conf = pred.pred_conf;
             const confStr = conf != null ? conf.toFixed(2) : '—';
             const match = matchSymbol(row);
+            const personName = row.person_name || (row.person_id ? shortId(row.person_id) : '—');
+            const personConf = row.person_conf;
+            const personCell = row.person_id
+                ? '<a href="/persons/' + row.person_id + '">' + personName + '</a>'
+                : personName;
             const opts = (currentLabels || []).map(l => '<option value="' + l + '"' + (row.label === l ? ' selected' : '') + '>' + l + '</option>').join('');
             return '<tr data-id="' + (row.id || '') + '">' +
                 '<td><input type="checkbox" class="row-cb" data-id="' + (row.id || '') + '"></td>' +
@@ -178,6 +209,8 @@
                 '<td>' + (row.device_id ?? '—') + '</td>' +
                 '<td>' + (row.camera_id ?? '—') + '</td>' +
                 '<td>' + (row.track_id ?? '—') + '</td>' +
+                '<td>' + personCell + '</td>' +
+                '<td><span class="' + confClass(personConf) + '">' + (personConf != null ? personConf.toFixed(2) : '—') + '</span></td>' +
                 '<td class="row-activity">' + (row.label || '—') + '</td>' +
                 '<td><select class="set-label-sel" data-id="' + (row.id || '') + '"><option value="">—</option>' + opts + '</select> <button type="button" class="btn btn-sm set-label-btn" data-id="' + (row.id || '') + '">Set</button></td>' +
                 '<td>' + (pred.pred_label || '—') + '</td>' +

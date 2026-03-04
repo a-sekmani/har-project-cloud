@@ -1,8 +1,8 @@
 # Cloud HAR - Human Activity Recognition API
 
-Cloud service for human activity recognition from skeleton (pose) data. It provides window-level inference, pose window storage, ONNX-based activity prediction, a web dashboard for recent windows and labeling, window ingest from edge devices (with optional person identification), and face recognition (person management and face gallery for edge sync).
+Cloud service for human activity recognition from skeleton (pose) data. The web UI is titled **HAR Cloud App** and provides a unified header and navigation across all pages. It provides window-level inference, pose window storage, ONNX-based activity prediction, a web dashboard for recent windows and labeling, window ingest from edge devices (with optional person identification), and face recognition (person management and face gallery for edge sync).
 
-**Requirements:** Python 3.11+, Docker and Docker Compose, PostgreSQL.
+**Requirements:** Python 3.11+. For production: Docker Compose and PostgreSQL (or use SQLite for local development).
 
 ## Documentation
 

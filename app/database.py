@@ -9,14 +9,28 @@ This module handles all database-related setup including:
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.ext.compiler import compiles
 from app.config import DATABASE_URL
+
+
+@compiles(PG_UUID, "sqlite")
+def compile_uuid_sqlite(type_, compiler, **kw):
+    """Render PostgreSQL UUID as TEXT for SQLite (no native UUID type)."""
+    return "TEXT"
+
+# SQLite needs check_same_thread=False for FastAPI
+_connect_args = {}
+if "sqlite" in DATABASE_URL.lower():
+    _connect_args["check_same_thread"] = False
 
 # Create SQLAlchemy engine
 # pool_pre_ping=True: Verifies connections before using them (handles stale connections)
 # echo=False: Disable SQL query logging (set to True for debugging)
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
+    connect_args=_connect_args,
+    pool_pre_ping=("sqlite" not in DATABASE_URL.lower()),
     echo=False
 )
 

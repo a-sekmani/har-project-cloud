@@ -93,7 +93,7 @@ echo "Sending inference from pi-001..."
 curl -s -X POST "$API_URL/v1/activity/infer" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
-  -d @test_request.json > /dev/null
+  -d @samples/test_request.json > /dev/null
 check_response
 
 echo "Sending inference from pi-002..."

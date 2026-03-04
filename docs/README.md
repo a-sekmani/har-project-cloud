@@ -1,6 +1,6 @@
 # Cloud HAR Documentation
 
-This folder contains the full documentation for the Cloud HAR (Human Activity Recognition) API service.
+This folder contains the full documentation for the Cloud HAR (Human Activity Recognition) API service. The web interface is branded **HAR Cloud App** and offers a consistent layout and navigation across Dashboard, Recent Windows, Label Windows, and Person Management.
 
 ## Documentation Index
 

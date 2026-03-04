@@ -3,8 +3,8 @@
 ## Requirements
 
 - Python 3.11+
-- Docker and Docker Compose (for containerized deployment)
-- PostgreSQL (managed via Docker Compose or installed separately)
+- Docker and Docker Compose (optional; for PostgreSQL or containerized deployment)
+- PostgreSQL (optional; the app can run with SQLite for local development)
 
 ## Using Docker
 
@@ -20,30 +20,23 @@ Run the container (requires a running PostgreSQL instance; use Docker Compose fo
 docker run -p 8000:8000 -e DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db cloud-har
 ```
 
-## Using Docker Compose (Recommended)
+## Using Docker Compose
+
+The provided `docker-compose.yml` runs **PostgreSQL** only (for use when running the API locally):
 
 ```bash
-# Start all services (API + PostgreSQL)
+# Start PostgreSQL (port 5433)
 docker-compose up -d
 
-# Rebuild after code changes
-docker-compose up -d --build cloud-har
-
-# View logs
-docker-compose logs -f cloud-har
-
-# Stop services
-docker-compose down
+# Run migrations and the API on your host (see Local Development)
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # Stop and remove volumes (deletes database data)
 docker-compose down -v
 ```
 
-The Docker Compose setup includes:
-
-- **cloud-har**: API service (port 8000)
-- **postgres**: PostgreSQL database (exposed on host port 5433)
-- Automatic database migrations on startup (`alembic upgrade head`)
+- **postgres**: PostgreSQL 16 (exposed on host port 5433; default `DATABASE_URL` uses `localhost:5433`).
 
 ## Local Development
 
@@ -55,13 +48,16 @@ source venv/bin/activate   # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -e .
 
-# Set up database: start Postgres (e.g. docker-compose up -d postgres)
+# Option A: Use PostgreSQL (e.g. docker-compose up -d postgres)
 # Default DATABASE_URL uses localhost:5433 (Docker Compose maps postgres to 5433).
 # If your Postgres runs on port 5432, set:
 #   export DATABASE_URL="postgresql+psycopg://cloudhar:cloudhar@localhost:5432/cloudhar"
+# Then run migrations:
+#   alembic upgrade head
 
-# Run database migrations
-alembic upgrade head
+# Option B: Use SQLite (no Docker required)
+#   export DATABASE_URL="sqlite:///./cloudhar.db"
+# Tables are created automatically on startup; no alembic needed.
 
 # Run the server
 uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -89,14 +85,13 @@ Set `MODEL_KEY_DEFAULT` (e.g. `edge17_v6_lowlr`) for the dashboard default model
 
 ## Quick Start
 
-1. **Start services:** `docker-compose up -d` (or start Postgres only and run the API locally)
-2. **Migrations:** `alembic upgrade head`
-3. **Run API:** `uvicorn app.main:app --host 0.0.0.0 --port 8000`
-4. **Health check:** `curl http://localhost:8000/health`
-5. **Seed windows (with keypoints):** `python scripts/seed_windows.py --from labelled.jsonl --limit 20`  
+1. **Database:** Either `docker-compose up -d` then `alembic upgrade head` (PostgreSQL), or `export DATABASE_URL="sqlite:///./cloudhar.db"` (SQLite; no migrations).
+2. **Run API:** `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+3. **Health check:** `curl http://localhost:8000/health`
+4. **Seed windows (with keypoints):** `python scripts/seed_windows.py --from labelled.jsonl --limit 20`  
    Or ingest one window: `curl -s -X POST "http://localhost:8000/v1/windows/ingest" -H "X-API-Key: dev-key" -H "Content-Type: application/json" --data-binary @window_sample.json`
-6. **List windows:** `curl -s "http://localhost:8000/v1/windows?limit=5" -H "X-API-Key: dev-key"`
-7. **Run ONNX predict** (replace `WINDOW_ID`):  
+5. **List windows:** `curl -s "http://localhost:8000/v1/windows?limit=5" -H "X-API-Key: dev-key"`
+6. **Run ONNX predict** (replace `WINDOW_ID`):  
    `curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" -H "X-API-Key: dev-key" -H "Content-Type: application/json" -d '{"model_key":"edge17_v6_lowlr","store":true}'`
-8. **Recent Windows UI:** Open `http://localhost:8000/windows`
-9. **Label page:** `http://localhost:8000/windows/label`
+7. **Recent Windows UI:** Open `http://localhost:8000/windows`
+8. **Label page:** `http://localhost:8000/windows/label`
