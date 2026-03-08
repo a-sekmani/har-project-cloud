@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Person Details</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
         * { box-sizing: border-box; }
@@ -69,6 +70,28 @@
         .modal .close:hover { color: var(--text); }
         .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
         .loading { text-align: center; padding: 40px; color: var(--muted); }
+        .chart-container { position: relative; height: 220px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: var(--border); font-weight: 600; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .tabs .tab-btn { padding: 10px 18px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 0.9rem; }
+        .tabs .tab-btn:hover { color: var(--text); background: #f1f5f9; }
+        .tabs .tab-btn.active { background: var(--card); color: var(--text); font-weight: 600; border-color: var(--border); margin-bottom: -1px; padding-bottom: 11px; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .header { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .header .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
+        .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
+        .header select, .header input[type="number"], .header input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; font-size: 0.875rem; }
+        .header .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+        .header .filters .cb { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; }
+        .header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+        .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; padding: 12px 0; }
+        .pagination .btn-page { min-width: 36px; padding: 6px 10px; }
+        .pagination .btn-page.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     </style>
 </head>
 <body>
@@ -82,41 +105,137 @@
             </nav>
         </header>
         <a href="/persons" class="back-link">&larr; Back to Persons</a>
-        
-        <div id="person_info" class="card">
-            <div class="loading">Loading person details...</div>
+
+        <div class="tabs">
+            <button type="button" class="tab-btn active" data-tab="info">Information</button>
+            <button type="button" class="tab-btn" data-tab="activities">Activities</button>
+            <button type="button" class="tab-btn" data-tab="windows">Recent Windows</button>
         </div>
 
-        <div class="card">
-            <div class="section-header">
-                <h2>Face Images</h2>
-                <div class="badge version">
-                    <span>Gallery last updated:</span>
-                    <strong id="gallery_version">—</strong>
+        <div id="tab_info" class="tab-panel active">
+            <div id="person_info" class="card">
+                <div class="loading">Loading person details...</div>
+            </div>
+
+            <div id="faces" class="card">
+                <div class="section-header">
+                    <h2>Face Images</h2>
+                    <div class="badge version">
+                        <span>Gallery last updated:</span>
+                        <strong id="gallery_version">—</strong>
+                    </div>
+                </div>
+
+                <div class="upload-area" id="upload_area">
+                    <input type="file" id="file_input" multiple accept="image/*">
+                    <div class="icon">📷</div>
+                    <p><strong>Click to upload</strong> or drag and drop</p>
+                    <p style="font-size: 0.8rem;">Supports multiple images (JPG, PNG). New uploads are <strong>added</strong> to existing faces.</p>
+                </div>
+
+                <div id="upload_progress" class="upload-progress" style="display: none;">
+                    <div class="progress-bar"><div class="fill" id="progress_fill" style="width: 0%;"></div></div>
+                    <p style="font-size: 0.8rem; color: var(--muted); margin-top: 8px;">Uploading... <span id="progress_text">0%</span></p>
+                </div>
+
+                <div id="upload_result" style="display: none;"></div>
+
+                <div class="meta" style="margin-top: 16px;">
+                    <span id="faces_last_updated">Last updated: —</span>
+                    <span id="faces_message"></span>
+                </div>
+
+                <div id="faces_grid" class="faces-grid" style="margin-top: 16px;">
+                    <div class="empty-state">Loading faces...</div>
                 </div>
             </div>
+        </div>
 
-            <div class="upload-area" id="upload_area">
-                <input type="file" id="file_input" multiple accept="image/*">
-                <div class="icon">📷</div>
-                <p><strong>Click to upload</strong> or drag and drop</p>
-                <p style="font-size: 0.8rem;">Supports multiple images (JPG, PNG). New uploads are <strong>added</strong> to existing faces.</p>
+        <div id="tab_activities" class="tab-panel">
+            <div class="header">
+                <div class="filter-row">
+                    <div>
+                        <label for="activity_time_range">Time range</label>
+                        <select id="activity_time_range">
+                            <option value="24h">Last 24 hours</option>
+                            <option value="7d" selected>Last week</option>
+                            <option value="30d">Last month</option>
+                        </select>
+                    </div>
+                </div>
             </div>
-
-            <div id="upload_progress" class="upload-progress" style="display: none;">
-                <div class="progress-bar"><div class="fill" id="progress_fill" style="width: 0%;"></div></div>
-                <p style="font-size: 0.8rem; color: var(--muted); margin-top: 8px;">Uploading... <span id="progress_text">0%</span></p>
+            <div class="grid-2">
+                <div class="card">
+                    <h2>Activity Distribution</h2>
+                    <div class="chart-container"><canvas id="chart_activity_dist"></canvas></div>
+                </div>
+                <div class="card">
+                    <h2>Activity Over Time</h2>
+                    <div class="chart-container"><canvas id="chart_activity_timeline"></canvas></div>
+                </div>
             </div>
+        </div>
 
-            <div id="upload_result" style="display: none;"></div>
-
-            <div class="meta" style="margin-top: 16px;">
-                <span id="faces_last_updated">Last updated: —</span>
-                <span id="faces_message"></span>
-            </div>
-
-            <div id="faces_grid" class="faces-grid" style="margin-top: 16px;">
-                <div class="empty-state">Loading faces...</div>
+        <div id="tab_windows" class="tab-panel">
+            <div class="card">
+                <h2>Recent Windows</h2>
+                <div class="header">
+                    <div class="filter-row">
+                        <div>
+                            <label for="windows_model_key">Model</label>
+                            <select id="windows_model_key">
+                                <option value="">—</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="windows_limit">Limit</label>
+                            <select id="windows_limit">
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div>
+                            <label for="windows_filter_device">Device</label>
+                            <select id="windows_filter_device">
+                                <option value="">— All —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="windows_filter_camera">Camera</label>
+                            <select id="windows_filter_camera">
+                                <option value="">— All —</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="windows_filter_activity">Activity</label>
+                            <select id="windows_filter_activity">
+                                <option value="">— All —</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="filters">
+                            <label class="cb"><input type="checkbox" id="windows_filter_only_pred"> Only with predictions</label>
+                            <label class="cb"><input type="checkbox" id="windows_filter_low_conf"> Only low conf (&lt;0.6)</label>
+                            <label class="cb"><input type="checkbox" id="windows_auto_refresh" checked> Auto-refresh (5s)</label>
+                        </div>
+                        <div class="actions">
+                            <button type="button" class="btn primary" id="windows_refresh_btn">Refresh now</button>
+                        </div>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead><tr><th>Time</th><th>Device</th><th>Camera</th><th>Activity</th><th>Conf</th><th>Actions</th></tr></thead>
+                        <tbody id="recent_windows_tbody">
+                            <tr><td colspan="6" style="text-align:center;color:var(--muted);">Load tab to fetch.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="windows_pagination" class="pagination"></div>
             </div>
         </div>
     </div>
@@ -162,33 +281,90 @@
         return div.innerHTML;
     }
 
-    function renderPersonInfo(person) {
-        currentPerson = person;
-        document.title = person.name + ' - Person Details';
-        const statusBadge = person.is_active 
-            ? '<span class="badge active">Active</span>' 
+    let chartActivityDist = null;
+    let chartActivityTimeline = null;
+
+    function renderPersonInfo(detail) {
+        currentPerson = detail;
+        document.title = (detail.name || 'Person') + ' - Person Details';
+        const statusBadge = detail.is_active !== false
+            ? '<span class="badge active">Active</span>'
             : '<span class="badge inactive">Inactive</span>';
-        
+        const firstSeen = detail.first_seen ? formatDate(detail.first_seen) : '—';
+        const lastSeen = detail.last_seen ? formatDate(detail.last_seen) : '—';
+        const totalWin = detail.total_windows != null ? detail.total_windows : 0;
+        const embeddingsCount = detail.face_count != null ? detail.face_count : 0;
         document.getElementById('person_info').innerHTML = `
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-                <h1>${escapeHtml(person.name)}</h1>
+                <h1>${escapeHtml(detail.name)}</h1>
                 ${statusBadge}
             </div>
             <div class="info-grid">
                 <div class="info-item">
                     <label>Person ID</label>
-                    <div class="value" style="font-family: monospace; font-size: 0.85rem;">${person.id}</div>
+                    <div class="value" style="font-family: monospace; font-size: 0.85rem;">${detail.id}</div>
                 </div>
                 <div class="info-item">
                     <label>Face Count</label>
-                    <div class="value" id="face_count_display">${person.face_count || 0}</div>
+                    <div class="value" id="face_count_display">${detail.face_count || 0}</div>
+                </div>
+                <div class="info-item">
+                    <label>Embeddings Count</label>
+                    <div class="value">${embeddingsCount}</div>
+                </div>
+                <div class="info-item">
+                    <label>First Seen</label>
+                    <div class="value">${firstSeen}</div>
+                </div>
+                <div class="info-item">
+                    <label>Last Seen</label>
+                    <div class="value">${lastSeen}</div>
+                </div>
+                <div class="info-item">
+                    <label>Total Windows</label>
+                    <div class="value">${totalWin}</div>
                 </div>
                 <div class="info-item">
                     <label>Created</label>
-                    <div class="value">${formatDate(person.created_at)}</div>
+                    <div class="value">${formatDate(detail.created_at)}</div>
                 </div>
             </div>
         `;
+    }
+
+    function renderActivityDistribution(dist) {
+        const ctx = document.getElementById('chart_activity_dist').getContext('2d');
+        if (chartActivityDist) chartActivityDist.destroy();
+        if (!dist || !dist.length) {
+            chartActivityDist = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+            return;
+        }
+        chartActivityDist = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: dist.map(d => d.label),
+                datasets: [{ data: dist.map(d => d.count), backgroundColor: ['#2563eb','#16a34a','#ea580c','#dc2626','#7c3aed','#0891b2'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    function renderActivityTimeline(tl) {
+        const ctx = document.getElementById('chart_activity_timeline').getContext('2d');
+        if (chartActivityTimeline) chartActivityTimeline.destroy();
+        if (!tl || !tl.length) {
+            chartActivityTimeline = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+            return;
+        }
+        const labels = tl.map(d => {
+            const t = new Date(d.time);
+            return t.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        });
+        chartActivityTimeline = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: 'Windows', data: tl.map(d => d.count), backgroundColor: '#2563eb' }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
     }
 
     function renderFaces(faces) {
@@ -203,12 +379,15 @@
         grid.innerHTML = faces.map(face => {
             const imagePath = face.image_path ? ('/face-images/' + String(face.image_path).replace(/\\/g, '/')) : ('/face-images/' + PERSON_ID + '/' + face.id + '.jpg');
             const detScore = face.det_score != null ? (face.det_score * 100).toFixed(1) + '%' : '—';
+            const qualityScore = face.quality_score != null ? (face.quality_score * 100).toFixed(1) + '%' : '—';
             return `
                 <div class="face-card" data-id="${face.id}">
                     <img src="${imagePath}" alt="Face" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23e2e8f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%2364748b%22 font-size=%2212%22>No Image</text></svg>'">
                     <button class="delete-btn" data-id="${face.id}" title="Delete face">&times;</button>
                     <div class="face-info">
+                        <div>Embedding: <span class="score">Yes</span></div>
                         <div>Detection: <span class="score">${detScore}</span></div>
+                        <div>Quality: ${qualityScore}</div>
                         <div style="font-size: 0.7rem; color: var(--muted);">${formatDate(face.created_at)}</div>
                     </div>
                 </div>
@@ -225,8 +404,13 @@
         document.getElementById('faces_last_updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
-    function fetchPerson() {
-        fetch('/v1/persons/' + PERSON_ID, { headers: { 'X-API-Key': API_KEY } })
+    function fetchDetail(since, until) {
+        let url = '/v1/persons/' + PERSON_ID + '/detail';
+        const params = new URLSearchParams();
+        if (since) params.set('since', since);
+        if (until) params.set('until', until);
+        if (params.toString()) url += '?' + params.toString();
+        fetch(url, { headers: { 'X-API-Key': API_KEY } })
             .then(r => {
                 if (!r.ok) {
                     if (r.status === 404) throw new Error('Person not found');
@@ -234,8 +418,10 @@
                 }
                 return r.json();
             })
-            .then(person => {
-                renderPersonInfo(person);
+            .then(detail => {
+                renderPersonInfo(detail);
+                renderActivityDistribution(detail.activity_distribution || []);
+                renderActivityTimeline(detail.activity_timeline || []);
             })
             .catch(err => {
                 document.getElementById('person_info').innerHTML = `
@@ -245,6 +431,181 @@
                     </div>
                 `;
             });
+    }
+
+    let windowsCurrentPage = 1;
+    let windowsHasMore = false;
+    let windowsRefreshTimer = null;
+
+    function escapeAttr(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function windowsBuildParams() {
+        const params = new URLSearchParams();
+        params.set('person_id', PERSON_ID);
+        const limit = parseInt(document.getElementById('windows_limit').value, 10);
+        params.set('limit', limit);
+        params.set('offset', (windowsCurrentPage - 1) * limit);
+        const model = document.getElementById('windows_model_key').value;
+        if (model) params.set('model_key', model);
+        const dev = document.getElementById('windows_filter_device').value;
+        if (dev) params.set('device_id', dev);
+        const cam = document.getElementById('windows_filter_camera').value;
+        if (cam) params.set('camera_id', cam);
+        const activity = document.getElementById('windows_filter_activity').value;
+        if (activity) params.set('pred_label', activity);
+        if (document.getElementById('windows_filter_only_pred').checked) params.set('only_with_predictions', 'true');
+        if (document.getElementById('windows_filter_low_conf').checked) params.set('max_pred_conf', '0.6');
+        return params;
+    }
+
+    function fetchWindowsModels() {
+        fetch('/v1/models', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : { models: [] })
+            .then(data => {
+                const list = data.models || [];
+                const sel = document.getElementById('windows_model_key');
+                const cur = sel.value;
+                sel.innerHTML = '<option value="">—</option>' + list.map(m => '<option value="' + escapeAttr(m) + '">' + escapeAttr(m) + '</option>').join('');
+                if (cur && list.indexOf(cur) !== -1) sel.value = cur;
+            })
+            .catch(() => {});
+    }
+
+    function fetchWindowsFilterOptions() {
+        fetch('/v1/dashboard/filter-options', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => {
+                const devSel = document.getElementById('windows_filter_device');
+                const camSel = document.getElementById('windows_filter_camera');
+                const curDev = devSel.value;
+                const curCam = camSel.value;
+                const devices = Array.isArray(data.devices) ? data.devices : [];
+                const cameras = Array.isArray(data.cameras) ? data.cameras : [];
+                devSel.innerHTML = '<option value="">— All —</option>' + devices.map(d => '<option value="' + escapeAttr(d) + '">' + escapeAttr(d) + '</option>').join('');
+                camSel.innerHTML = '<option value="">— All —</option>' + cameras.map(c => '<option value="' + escapeAttr(c) + '">' + escapeAttr(c) + '</option>').join('');
+                if (curDev && devices.indexOf(curDev) !== -1) devSel.value = curDev;
+                if (curCam && cameras.indexOf(curCam) !== -1) camSel.value = curCam;
+            })
+            .catch(() => {});
+    }
+
+    function fillWindowsActivityFilter(labels) {
+        const sel = document.getElementById('windows_filter_activity');
+        const cur = sel.value;
+        const list = Array.isArray(labels) ? labels : [];
+        sel.innerHTML = '<option value="">— All —</option>' + list.map(l => '<option value="' + escapeAttr(l) + '">' + escapeAttr(l) + '</option>').join('');
+        if (cur && list.indexOf(cur) !== -1) sel.value = cur;
+    }
+
+    function loadWindowsActivityLabels() {
+        const model = document.getElementById('windows_model_key').value;
+        if (!model) { fillWindowsActivityFilter([]); return; }
+        fetch('/v1/models/' + encodeURIComponent(model), { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => fillWindowsActivityFilter(data.labels || []))
+            .catch(() => fillWindowsActivityFilter([]));
+    }
+
+    function scheduleWindowsRefresh() {
+        if (windowsRefreshTimer) clearInterval(windowsRefreshTimer);
+        if (!document.getElementById('windows_auto_refresh').checked) return;
+        windowsRefreshTimer = setInterval(() => {
+            if (document.visibilityState === 'hidden') return;
+            if (document.querySelector('#tab_windows.active')) fetchWindowsPage();
+        }, 5000);
+    }
+
+    function renderRecentWindows(rows) {
+        const tbody = document.getElementById('recent_windows_tbody');
+        if (!rows || !rows.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(w => {
+            const time = w.created_at ? formatDate(w.created_at) : '—';
+            const pred = w.prediction || {};
+            const act = pred.pred_label || '—';
+            const conf = pred.pred_conf != null ? (pred.pred_conf * 100).toFixed(0) + '%' : '—';
+            const viewLink = '<a href="/windows?window_id=' + encodeURIComponent(w.id) + '" class="btn btn-sm">View</a>';
+            return '<tr><td>' + time + '</td><td>' + escapeHtml(w.device_id || '—') + '</td><td>' + escapeHtml(w.camera_id || '—') + '</td><td>' + escapeHtml(act) + '</td><td>' + conf + '</td><td>' + viewLink + '</td></tr>';
+        }).join('');
+    }
+
+    function renderWindowsPagination() {
+        const el = document.getElementById('windows_pagination');
+        let html = '';
+        if (windowsCurrentPage > 1) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (windowsCurrentPage - 1) + '">Prev</button>';
+        }
+        for (let p = 1; p <= windowsCurrentPage; p++) {
+            html += '<button type="button" class="btn btn-page' + (p === windowsCurrentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+        }
+        if (windowsHasMore) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (windowsCurrentPage + 1) + '">Next</button>';
+        }
+        el.innerHTML = html || '<span style="color:var(--muted);">Page ' + windowsCurrentPage + '</span>';
+        el.querySelectorAll('.btn-page').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const p = parseInt(btn.dataset.page, 10);
+                if (p >= 1) { windowsCurrentPage = p; fetchWindowsPage(); }
+            });
+        });
+    }
+
+    function fetchWindowsPage() {
+        const url = '/v1/dashboard/windows?' + windowsBuildParams().toString();
+        document.getElementById('recent_windows_tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">Loading...</td></tr>';
+        fetch(url, { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(resp => {
+                const rows = (resp && resp.data) ? resp.data : [];
+                windowsHasMore = !!(resp && resp.has_more);
+                renderRecentWindows(rows);
+                renderWindowsPagination();
+            })
+            .catch(err => {
+                document.getElementById('recent_windows_tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--red);">Error: ' + escapeHtml(err.message) + '</td></tr>';
+            });
+    }
+
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(b => { b.classList.toggle('active', b.dataset.tab === tabId); });
+        document.querySelectorAll('.tab-panel').forEach(p => { p.classList.toggle('active', p.id === 'tab_' + tabId); });
+        if (tabId === 'activities') applyActivityFilter();
+        if (tabId === 'windows') {
+            loadWindowsActivityLabels();
+            fetchWindowsPage();
+            scheduleWindowsRefresh();
+        } else if (windowsRefreshTimer) {
+            clearInterval(windowsRefreshTimer);
+            windowsRefreshTimer = null;
+        }
+    }
+
+    function getActivityTimeRange() {
+        const v = document.getElementById('activity_time_range').value;
+        const now = new Date();
+        const until = now.toISOString();
+        let since = new Date(now);
+        if (v === '24h') since.setHours(since.getHours() - 24);
+        else if (v === '7d') since.setDate(since.getDate() - 7);
+        else if (v === '30d') since.setDate(since.getDate() - 30);
+        return { since: since.toISOString(), until: until };
+    }
+
+    function applyActivityFilter() {
+        const tr = getActivityTimeRange();
+        let url = '/v1/persons/' + PERSON_ID + '/detail?since=' + encodeURIComponent(tr.since) + '&until=' + encodeURIComponent(tr.until);
+        fetch(url, { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(detail => {
+                renderActivityDistribution(detail.activity_distribution || []);
+                renderActivityTimeline(detail.activity_timeline || []);
+            })
+            .catch(err => { console.error(err); });
     }
 
     function fetchFaces() {
@@ -332,7 +693,7 @@
                 resultDiv.style.display = 'block';
                 
                 fetchFaces();
-                fetchPerson();
+                fetchDetail();
                 fetchGalleryVersion();
             } else {
                 let errorMsg = 'Upload failed';
@@ -366,7 +727,7 @@
                 showMessage('faces_message', 'Face deleted successfully.', false);
                 closeModal('delete_face_modal');
                 fetchFaces();
-                fetchPerson();
+                fetchDetail();
                 fetchGalleryVersion();
             })
             .catch(err => {
@@ -422,7 +783,28 @@
         if (e.target.id === 'delete_face_modal') closeModal('delete_face_modal');
     });
 
-    fetchPerson();
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+    document.getElementById('activity_time_range').addEventListener('change', applyActivityFilter);
+
+    fetchWindowsModels();
+    fetchWindowsFilterOptions();
+    document.getElementById('windows_model_key').addEventListener('change', () => {
+        loadWindowsActivityLabels();
+        windowsCurrentPage = 1;
+        fetchWindowsPage();
+        scheduleWindowsRefresh();
+    });
+    document.getElementById('windows_limit').addEventListener('change', () => { windowsCurrentPage = 1; fetchWindowsPage(); });
+    ['windows_filter_device','windows_filter_camera','windows_filter_activity','windows_filter_only_pred','windows_filter_low_conf'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => { windowsCurrentPage = 1; fetchWindowsPage(); });
+    });
+    document.getElementById('windows_auto_refresh').addEventListener('change', scheduleWindowsRefresh);
+    document.getElementById('windows_refresh_btn').addEventListener('click', () => fetchWindowsPage());
+
+    fetchDetail();
     fetchFaces();
     fetchGalleryVersion();
     setInterval(fetchGalleryVersion, 10000);

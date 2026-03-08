@@ -144,6 +144,7 @@ class Person(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
+    external_ref = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
 

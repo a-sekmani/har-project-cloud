@@ -114,15 +114,19 @@ Create a new person for face recognition.
 **Request Body:**
 ```json
 {
-  "name": "Ahmad"
+  "name": "Ahmad",
+  "external_ref": "optional-external-id",
+  "is_active": true
 }
 ```
+`external_ref` is optional; `is_active` defaults to `true`.
 
 **Response:**
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Ahmad",
+  "external_ref": "optional-external-id",
   "is_active": true,
   "created_at": "2026-02-24T10:30:00.000000",
   "face_count": 0
@@ -146,6 +150,8 @@ List all persons.
 | is_active | boolean | - | Filter by active status |
 | limit | integer | 100 | Maximum results (1-500) |
 | offset | integer | 0 | Skip first N results |
+| include_stats | boolean | false | When true, each person includes `last_seen`, `total_windows`, `main_activity` (requires model_key or default model) |
+| model_key | string | - | Model key for stats/predictions (used when include_stats=true) |
 
 **Response:**
 ```json
@@ -154,14 +160,19 @@ List all persons.
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "Ahmad",
+      "external_ref": null,
       "is_active": true,
       "created_at": "2026-02-24T10:30:00.000000",
-      "face_count": 3
+      "face_count": 3,
+      "last_seen": "2026-03-04T12:00:00Z",
+      "total_windows": 42,
+      "main_activity": "reading"
     }
   ],
   "total": 1
 }
 ```
+`last_seen`, `total_windows`, and `main_activity` are present only when `include_stats=true`.
 
 ---
 
@@ -179,11 +190,25 @@ Get a single person by ID.
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Ahmad",
+  "external_ref": null,
   "is_active": true,
   "created_at": "2026-02-24T10:30:00.000000",
   "face_count": 3
 }
 ```
+
+---
+
+### GET /v1/persons/{person_id}/detail
+
+Get full person detail: base info, stats, activity distribution, activity timeline, and recent windows. Use this for the Person Detail page.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| model_key | string | Model key for predictions (optional; default from config) |
+
+**Response:** Single object with: `id`, `name`, `external_ref`, `is_active`, `created_at`, `face_count`, `first_seen`, `last_seen`, `total_windows`, `main_activity`, `activity_distribution` (array of `{ label, count }`), `activity_timeline` (array of `{ time, count }`), `recent_windows` (array of window objects with `id`, `created_at`, `device_id`, `camera_id`, `pred_label`, `pred_conf`).
 
 ---
 
@@ -195,6 +220,7 @@ Update a person's details.
 ```json
 {
   "name": "Ahmad Updated",
+  "external_ref": "new-ref",
   "is_active": false
 }
 ```

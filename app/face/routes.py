@@ -16,8 +16,9 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.config import API_KEY
+from app.config import API_KEY, MODEL_KEY_DEFAULT
 from app.models import Person, PersonFace, GalleryVersion
+from app.services import get_person_window_stats, get_person_detail
 from app.face.schemas import (
     PersonCreate, PersonUpdate, PersonResponse, PersonListResponse,
     FaceResponse, FaceUploadResponse, FaceListResponse,
@@ -99,7 +100,11 @@ async def create_person(
     db: Session = Depends(get_db)
 ):
     """Create a new person."""
-    person = Person(name=body.name)
+    person = Person(
+        name=body.name,
+        external_ref=body.external_ref,
+        is_active=body.is_active,
+    )
     db.add(person)
     db.commit()
     db.refresh(person)
@@ -109,6 +114,7 @@ async def create_person(
     return PersonResponse(
         id=person.id,
         name=person.name,
+        external_ref=person.external_ref,
         is_active=person.is_active,
         created_at=person.created_at,
         face_count=0
@@ -120,9 +126,11 @@ async def list_persons(
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    include_stats: bool = Query(False, description="Include last_seen, total_windows, main_activity"),
+    model_key: Optional[str] = Query(None, description="Model for main_activity when include_stats=True"),
     db: Session = Depends(get_db)
 ):
-    """List all persons with optional filtering."""
+    """List all persons with optional filtering and optional window stats."""
     query = select(Person)
     
     if is_active is not None:
@@ -133,19 +141,28 @@ async def list_persons(
     result = db.execute(query)
     persons = result.scalars().all()
     
-    # Get face counts
+    model = model_key or MODEL_KEY_DEFAULT
     person_responses = []
     for person in persons:
         face_count = db.execute(
             select(func.count()).select_from(PersonFace).where(PersonFace.person_id == person.id)
         ).scalar() or 0
         
+        extra = {}
+        if include_stats:
+            stats = get_person_window_stats(db, person.id, model_key=model)
+            extra["last_seen"] = stats["last_seen"]
+            extra["total_windows"] = stats["total_windows"]
+            extra["main_activity"] = stats["main_activity"]
+        
         person_responses.append(PersonResponse(
             id=person.id,
             name=person.name,
+            external_ref=getattr(person, "external_ref", None),
             is_active=person.is_active,
             created_at=person.created_at,
-            face_count=face_count
+            face_count=face_count,
+            **extra
         ))
     
     # Get total count
@@ -175,10 +192,50 @@ async def get_person(
     return PersonResponse(
         id=person.id,
         name=person.name,
+        external_ref=getattr(person, "external_ref", None),
         is_active=person.is_active,
         created_at=person.created_at,
         face_count=face_count
     )
+
+
+@router.get("/persons/{person_id}/detail")
+async def get_person_detail_endpoint(
+    person_id: UUID,
+    model_key: Optional[str] = Query(None, description="Model for activity stats"),
+    since: Optional[str] = Query(None, description="ISO datetime (inclusive) filter for activity data"),
+    until: Optional[str] = Query(None, description="ISO datetime (inclusive) filter for activity data"),
+    db: Session = Depends(get_db)
+):
+    """Get full person detail: stats, activity_distribution, activity_timeline, recent_windows.
+    Optional since/until filter activity data by window created_at."""
+    from datetime import datetime, timezone
+    since_dt = None
+    until_dt = None
+    if since and since.strip():
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            pass
+    if until and until.strip():
+        try:
+            until_dt = datetime.fromisoformat(until.replace("Z", "+00:00"))
+            if until_dt.tzinfo is None:
+                until_dt = until_dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            pass
+    detail = get_person_detail(
+        db, person_id,
+        model_key=model_key or MODEL_KEY_DEFAULT,
+        recent_windows_limit=50,
+        since=since_dt,
+        until=until_dt,
+    )
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Person not found")
+    return detail
 
 
 @router.patch("/persons/{person_id}", response_model=PersonResponse)
@@ -198,6 +255,9 @@ async def update_person(
     
     if body.name is not None:
         person.name = body.name
+    
+    if body.external_ref is not None:
+        person.external_ref = body.external_ref
     
     if body.is_active is not None and body.is_active != person.is_active:
         person.is_active = body.is_active
@@ -219,6 +279,7 @@ async def update_person(
     return PersonResponse(
         id=person.id,
         name=person.name,
+        external_ref=person.external_ref,
         is_active=person.is_active,
         created_at=person.created_at,
         face_count=face_count

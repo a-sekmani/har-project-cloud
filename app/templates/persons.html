@@ -94,15 +94,18 @@
         <table>
             <thead>
                 <tr>
-                    <th>Name</th>
+                    <th>Person Name</th>
+                    <th>Person ID</th>
+                    <th>Faces Count</th>
+                    <th>Last Seen</th>
+                    <th>Total Windows</th>
+                    <th>Main Activity</th>
                     <th>Status</th>
-                    <th>Faces</th>
-                    <th>Created</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+                <tr><td colspan="8" class="empty-state">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -115,6 +118,10 @@
                 <div class="form-group">
                     <label for="add_name">Name</label>
                     <input type="text" id="add_name" placeholder="Enter person name" required>
+                </div>
+                <div class="form-group">
+                    <label for="add_external_ref">External Ref (optional)</label>
+                    <input type="text" id="add_external_ref" placeholder="Optional external reference">
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn" id="add_cancel">Cancel</button>
@@ -133,6 +140,10 @@
                 <div class="form-group">
                     <label for="edit_name">Name</label>
                     <input type="text" id="edit_name" placeholder="Enter person name" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit_external_ref">External Ref (optional)</label>
+                    <input type="text" id="edit_external_ref" placeholder="Optional external reference">
                 </div>
                 <div class="form-group">
                     <div class="form-check">
@@ -187,19 +198,28 @@
         currentPersons = persons;
         const tbody = document.getElementById('tbody');
         if (!persons.length) {
-            tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><p>No persons found.</p><p>Click "Add Person" to create one.</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><p>No persons found.</p><p>Click "Add Person" to create one.</p></td></tr>';
             return;
         }
         tbody.innerHTML = persons.map(p => {
             const statusClass = p.is_active ? 'status-active' : 'status-inactive';
             const statusText = p.is_active ? 'Active' : 'Inactive';
+            const shortId = (p.id || '').toString().slice(0, 8);
+            const lastSeen = p.last_seen ? formatDate(p.last_seen) : '—';
+            const totalWin = p.total_windows != null ? p.total_windows : '—';
+            const mainAct = (p.main_activity || '—');
             return '<tr data-id="' + p.id + '">' +
                 '<td><a href="/persons/' + p.id + '">' + escapeHtml(p.name) + '</a></td>' +
-                '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
+                '<td style="font-family:monospace;font-size:0.85rem;">' + shortId + '</td>' +
                 '<td>' + (p.face_count || 0) + '</td>' +
-                '<td>' + formatDate(p.created_at) + '</td>' +
+                '<td>' + lastSeen + '</td>' +
+                '<td>' + totalWin + '</td>' +
+                '<td>' + escapeHtml(mainAct) + '</td>' +
+                '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
                 '<td>' +
+                    '<a href="/persons/' + p.id + '" class="btn btn-sm">View</a> ' +
                     '<button class="btn btn-sm btn-edit" data-id="' + p.id + '">Edit</button> ' +
+                    '<a href="/persons/' + p.id + '#faces" class="btn btn-sm">Upload Faces</a> ' +
                     '<button class="btn btn-sm danger btn-delete" data-id="' + p.id + '">Delete</button>' +
                 '</td>' +
                 '</tr>';
@@ -229,7 +249,8 @@
     }
 
     function fetchPersons() {
-        fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
+        const url = '/v1/persons?include_stats=true';
+        fetch(url, { headers: { 'X-API-Key': API_KEY } })
             .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
             .then(data => {
                 const persons = data.persons || [];
@@ -259,11 +280,13 @@
             });
     }
 
-    function createPerson(name) {
+    function createPerson(name, externalRef) {
+        const body = { name: name, is_active: true };
+        if (externalRef != null && String(externalRef).trim() !== '') body.external_ref = String(externalRef).trim();
         fetch('/v1/persons', {
             method: 'POST',
             headers: API_HEADERS,
-            body: JSON.stringify({ name: name })
+            body: JSON.stringify(body)
         })
             .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
             .then(data => {
@@ -276,9 +299,10 @@
             });
     }
 
-    function updatePerson(id, name, isActive) {
+    function updatePerson(id, name, externalRef, isActive) {
         const body = {};
         if (name !== undefined) body.name = name;
+        if (externalRef !== undefined) body.external_ref = externalRef === '' ? null : externalRef;
         if (isActive !== undefined) body.is_active = isActive;
         
         fetch('/v1/persons/' + id, {
@@ -318,8 +342,9 @@
         const person = currentPersons.find(p => p.id === id);
         if (!person) return;
         document.getElementById('edit_id').value = id;
-        document.getElementById('edit_name').value = person.name;
-        document.getElementById('edit_active').checked = person.is_active;
+        document.getElementById('edit_name').value = person.name || '';
+        document.getElementById('edit_external_ref').value = person.external_ref || '';
+        document.getElementById('edit_active').checked = person.is_active !== false;
         document.getElementById('edit_modal').classList.add('show');
     }
 
@@ -337,6 +362,7 @@
 
     document.getElementById('btn_add_person').addEventListener('click', () => {
         document.getElementById('add_name').value = '';
+        document.getElementById('add_external_ref').value = '';
         document.getElementById('add_modal').classList.add('show');
         document.getElementById('add_name').focus();
     });
@@ -349,15 +375,17 @@
     document.getElementById('add_form').addEventListener('submit', e => {
         e.preventDefault();
         const name = document.getElementById('add_name').value.trim();
-        if (name) createPerson(name);
+        const externalRef = document.getElementById('add_external_ref').value.trim();
+        if (name) createPerson(name, externalRef || null);
     });
 
     document.getElementById('edit_form').addEventListener('submit', e => {
         e.preventDefault();
         const id = document.getElementById('edit_id').value;
         const name = document.getElementById('edit_name').value.trim();
+        const externalRef = document.getElementById('edit_external_ref').value.trim();
         const isActive = document.getElementById('edit_active').checked;
-        if (id && name) updatePerson(id, name, isActive);
+        if (id && name) updatePerson(id, name, externalRef || '', isActive);
     });
 
     document.getElementById('delete_confirm').addEventListener('click', () => {

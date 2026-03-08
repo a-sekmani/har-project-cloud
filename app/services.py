@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.constants import ALERT_ACTIVITIES
-from app.models import PoseWindow, WindowPrediction, Person
+from app.models import PoseWindow, WindowPrediction, Person, PersonFace
 from app.schemas import IngestWindowBody
 from app.utils import isoformat_utc
 
@@ -93,6 +93,7 @@ def get_dashboard_windows(
     device_id: str | None = None,
     camera_id: str | None = None,
     track_id: int | None = None,
+    person_id: UUID | None = None,
     only_with_predictions: bool = False,
     pred_label: str | None = None,
     max_pred_conf: float | None = None,
@@ -110,6 +111,8 @@ def get_dashboard_windows(
         query = query.filter(PoseWindow.camera_id == camera_id)
     if track_id is not None:
         query = query.filter(PoseWindow.track_id == track_id)
+    if person_id is not None:
+        query = query.filter(PoseWindow.person_id == person_id)
     fetch_limit = limit * 4 if (
         only_with_predictions or pred_label is not None or max_pred_conf is not None
         or only_unlabeled or only_labeled or only_mismatches
@@ -459,4 +462,161 @@ def get_dashboard_overview(
         "timeline_by_day": timeline_by_day,
         "person_presence": person_presence,
         "recent_important_events": recent_important_events,
+    }
+
+
+def get_dashboard_filter_options(
+    db: Session,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> dict:
+    """Return distinct device_id and camera_id from PoseWindow for filter dropdowns.
+    Returns all distinct values in the table (since/until ignored) so dropdowns always show available options."""
+    dev_rows = db.query(PoseWindow.device_id).filter(
+        PoseWindow.device_id.isnot(None),
+        PoseWindow.device_id != "",
+    ).distinct().all()
+    cam_rows = db.query(PoseWindow.camera_id).filter(
+        PoseWindow.camera_id.isnot(None),
+        PoseWindow.camera_id != "",
+    ).distinct().all()
+    devices = sorted({r[0] for r in dev_rows if r[0]})
+    cameras = sorted({r[0] for r in cam_rows if r[0]})
+    return {"devices": devices, "cameras": cameras}
+
+
+def get_person_window_stats(
+    db: Session,
+    person_id: UUID,
+    model_key: str | None = None,
+) -> dict:
+    """Return first_seen, last_seen, total_windows, main_activity for a person from PoseWindow + latest predictions."""
+    windows = (
+        db.query(PoseWindow)
+        .filter(PoseWindow.person_id == person_id)
+        .order_by(desc(PoseWindow.created_at))
+        .all()
+    )
+    if not windows:
+        return {
+            "first_seen": None,
+            "last_seen": None,
+            "total_windows": 0,
+            "main_activity": None,
+        }
+    created_times = [w.created_at for w in windows]
+    first_seen = min(created_times)
+    last_seen = max(created_times)
+    latest_pred_by_window: dict = {}
+    if model_key and windows:
+        window_ids = [w.id for w in windows]
+        preds = (
+            db.query(WindowPrediction)
+            .filter(
+                WindowPrediction.model_key == model_key,
+                WindowPrediction.window_id.in_(window_ids),
+            )
+            .order_by(desc(WindowPrediction.created_at))
+            .all()
+        )
+        for p in preds:
+            if p.window_id not in latest_pred_by_window:
+                latest_pred_by_window[p.window_id] = p.pred_label
+    labels = [latest_pred_by_window.get(w.id) for w in windows if latest_pred_by_window.get(w.id)]
+    main_activity = Counter(labels).most_common(1)[0][0] if labels else None
+    return {
+        "first_seen": isoformat_utc(first_seen) if first_seen else None,
+        "last_seen": isoformat_utc(last_seen) if last_seen else None,
+        "total_windows": len(windows),
+        "main_activity": main_activity,
+    }
+
+
+def get_person_detail(
+    db: Session,
+    person_id: UUID,
+    model_key: str | None = None,
+    recent_windows_limit: int = 50,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> dict | None:
+    """Return full person detail: base info, stats, activity_distribution, activity_timeline, recent_windows.
+    Optional since/until filter windows by created_at for stats and activity data."""
+    person = db.query(Person).filter(Person.id == person_id).first()
+    if person is None:
+        return None
+    face_count = db.query(PersonFace).filter(PersonFace.person_id == person_id).count()
+
+    query = (
+        db.query(PoseWindow)
+        .filter(PoseWindow.person_id == person_id)
+        .order_by(desc(PoseWindow.created_at))
+    )
+    if since is not None:
+        query = query.filter(PoseWindow.created_at >= since)
+    if until is not None:
+        query = query.filter(PoseWindow.created_at <= until)
+    windows = query.limit(max(recent_windows_limit * 2, 500)).all()
+    latest_pred_by_window = {}
+    if model_key and windows:
+        window_ids = [w.id for w in windows]
+        preds = (
+            db.query(WindowPrediction)
+            .filter(
+                WindowPrediction.model_key == model_key,
+                WindowPrediction.window_id.in_(window_ids),
+            )
+            .order_by(desc(WindowPrediction.created_at))
+            .all()
+        )
+        for p in preds:
+            if p.window_id not in latest_pred_by_window:
+                latest_pred_by_window[p.window_id] = p
+
+    rows = [(w, latest_pred_by_window.get(w.id)) for w in windows]
+    created_times = [w.created_at for w in windows]
+    first_seen = min(created_times) if created_times else None
+    last_seen = max(created_times) if created_times else None
+    dist_counter = Counter()
+    for w, pred in rows:
+        if pred is not None:
+            dist_counter[pred.pred_label] += 1
+    main_activity = dist_counter.most_common(1)[0][0] if dist_counter else None
+    activity_distribution = [{"label": label, "count": c} for label, c in dist_counter.most_common()]
+
+    timeline_buckets = {}
+    for w in windows:
+        t = w.created_at
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=UTC)
+        bucket = t.replace(hour=0, minute=0, second=0, microsecond=0)
+        timeline_buckets[bucket] = timeline_buckets.get(bucket, 0) + 1
+    activity_timeline = [{"time": isoformat_utc(k), "count": timeline_buckets[k]} for k in sorted(timeline_buckets.keys())]
+
+    recent_windows = []
+    for w, pred in rows[:recent_windows_limit]:
+        recent_windows.append({
+            "id": str(w.id),
+            "created_at": isoformat_utc(w.created_at),
+            "device_id": w.device_id,
+            "camera_id": w.camera_id,
+            "pred_label": pred.pred_label if pred else None,
+            "pred_conf": pred.pred_conf if pred else None,
+        })
+
+    return {
+        "id": str(person.id),
+        "name": person.name,
+        "external_ref": person.external_ref,
+        "is_active": person.is_active,
+        "created_at": isoformat_utc(person.created_at),
+        "face_count": face_count,
+        "first_seen": isoformat_utc(first_seen) if first_seen else None,
+        "last_seen": isoformat_utc(last_seen) if last_seen else None,
+        "total_windows": len(windows),
+        "main_activity": main_activity,
+        "activity_distribution": activity_distribution,
+        "activity_timeline": activity_timeline,
+        "recent_windows": recent_windows,
     }

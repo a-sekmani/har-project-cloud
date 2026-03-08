@@ -18,11 +18,14 @@ from pydantic import BaseModel, Field, field_validator
 class PersonCreate(BaseModel):
     """Request body for creating a person."""
     name: str = Field(..., min_length=1, max_length=255, description="Person's name")
+    external_ref: Optional[str] = Field(None, max_length=255, description="Optional external reference")
+    is_active: bool = Field(True, description="Whether person is active in gallery")
 
 
 class PersonUpdate(BaseModel):
     """Request body for updating a person."""
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="New name")
+    external_ref: Optional[str] = Field(None, max_length=255, description="Optional external reference")
     is_active: Optional[bool] = Field(None, description="Active status")
 
 
@@ -30,9 +33,13 @@ class PersonResponse(BaseModel):
     """Response for a single person."""
     id: UUID
     name: str
+    external_ref: Optional[str] = None
     is_active: bool
     created_at: datetime
     face_count: int = Field(0, description="Number of face images")
+    last_seen: Optional[str] = Field(None, description="ISO datetime of last window")
+    total_windows: Optional[int] = Field(None, description="Number of windows linked to person")
+    main_activity: Optional[str] = Field(None, description="Most common activity from predictions")
 
     model_config = {"from_attributes": True}
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Overview Dashboard</title>
+    <title>Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
@@ -20,10 +20,13 @@
         .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
         .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
         .site-nav a:hover { background: var(--border); text-decoration: none; }
-        .filters-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 20px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
-        .filters-bar label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
-        .filters-bar select, .filters-bar input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; }
-        .filters-bar .cb { display: inline-flex; align-items: center; gap: 6px; }
+        .header { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .header .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
+        .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
+        .header select, .header input[type="number"], .header input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; font-size: 0.875rem; }
+        .header .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+        .header .filters .cb { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; }
+        .header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
         .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
         .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
@@ -57,58 +60,62 @@
                 <a href="/persons">Person Management</a>
             </nav>
         </header>
-        <h1>Overview Dashboard</h1>
-        <div class="filters-bar">
-            <div>
-                <label for="time_range">Time range</label>
-                <select id="time_range">
-                    <option value="24h" selected>Last 24 hours</option>
-                    <option value="7d">Last week</option>
-                    <option value="30d">Last month</option>
-                </select>
+        <h1>Dashboard</h1>
+        <div class="header">
+            <div class="filter-row">
+                <div>
+                    <label for="time_range">Time range</label>
+                    <select id="time_range">
+                        <option value="24h">Last 24 hours</option>
+                        <option value="7d" selected>Last week</option>
+                        <option value="30d">Last month</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="model_key">Model</label>
+                    <select id="model_key">
+                        {% for m in models %}
+                        <option value="{{ m }}" {% if m == model_key %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
-            <div>
-                <label for="model_key">Model</label>
-                <select id="model_key">
-                    {% for m in models %}
-                    <option value="{{ m }}" {% if m == model_key %}selected{% endif %}>{{ m }}</option>
-                    {% endfor %}
-                </select>
+            <div class="filter-row">
+                <div>
+                    <label for="filter_person">Person</label>
+                    <select id="filter_person">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_device">Device</label>
+                    <select id="filter_device">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_camera">Camera</label>
+                    <select id="filter_camera">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_activity">Activity</label>
+                    <select id="filter_activity">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
             </div>
-            <div>
-                <label for="filter_person">Person</label>
-                <select id="filter_person">
-                    <option value="">— All —</option>
-                </select>
-            </div>
-            <div>
-                <label for="filter_camera">Camera</label>
-                <input type="text" id="filter_camera" placeholder="camera_id">
-            </div>
-            <div>
-                <label for="filter_device">Device</label>
-                <input type="text" id="filter_device" placeholder="device_id">
-            </div>
-            <div>
-                <label for="filter_activity">Activity</label>
-                <select id="filter_activity">
-                    <option value="">— All —</option>
-                </select>
-            </div>
-            <div class="cb">
-                <input type="checkbox" id="filter_only_alerts"> Show only alerts
-            </div>
-            <div class="cb">
-                <input type="checkbox" id="filter_only_unknown"> Only unknown persons
-            </div>
-            <div class="cb">
-                <input type="checkbox" id="filter_only_known"> Only known persons
-            </div>
-            <div>
-                <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
-            </div>
-            <div>
-                <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
+            <div class="filter-row">
+                <div class="filters">
+                    <label class="cb"><input type="checkbox" id="filter_only_alerts"> Show only alerts</label>
+                    <label class="cb"><input type="checkbox" id="filter_only_unknown"> Only unknown persons</label>
+                    <label class="cb"><input type="checkbox" id="filter_only_known"> Only known persons</label>
+                    <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
+                </div>
             </div>
         </div>
         <div class="meta">
@@ -181,9 +188,9 @@
         if (model) params.set('model_key', model);
         const person = document.getElementById('filter_person').value;
         if (person) params.set('person_id', person);
-        const camera = document.getElementById('filter_camera').value.trim();
+        const camera = document.getElementById('filter_camera').value;
         if (camera) params.set('camera_id', camera);
-        const device = document.getElementById('filter_device').value.trim();
+        const device = document.getElementById('filter_device').value;
         if (device) params.set('device_id', device);
         const activity = document.getElementById('filter_activity').value;
         if (activity) params.set('activity', activity);
@@ -281,12 +288,44 @@
         }).join('');
     }
 
-    function fillActivityFilter(dist) {
+    function fillActivityFilter(labels) {
         const sel = document.getElementById('filter_activity');
         const current = sel.value;
-        const labels = [...new Set((dist || []).map(d => d.label).filter(Boolean))].sort();
-        sel.innerHTML = '<option value="">— All —</option>' + labels.map(l => '<option value="' + l + '">' + l + '</option>').join('');
-        if (labels.includes(current)) sel.value = current;
+        const list = Array.isArray(labels) ? labels : [];
+        sel.innerHTML = '<option value="">— All —</option>' + list.map(l => '<option value="' + l + '">' + l + '</option>').join('');
+        if (list.includes(current)) sel.value = current;
+    }
+
+    function loadActivityLabels() {
+        const model = document.getElementById('model_key').value;
+        if (!model) { fillActivityFilter([]); return; }
+        fetch('/v1/models/' + encodeURIComponent(model), { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => { fillActivityFilter(data.labels || []); })
+            .catch(() => fillActivityFilter([]));
+    }
+
+    function escapeAttr(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function fetchFilterOptions() {
+        fetch('/v1/dashboard/filter-options', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => {
+                const devSel = document.getElementById('filter_device');
+                const camSel = document.getElementById('filter_camera');
+                const curDev = devSel.value;
+                const curCam = camSel.value;
+                const devices = Array.isArray(data.devices) ? data.devices : [];
+                const cameras = Array.isArray(data.cameras) ? data.cameras : [];
+                devSel.innerHTML = '<option value="">— All —</option>' + devices.map(d => '<option value="' + escapeAttr(d) + '">' + escapeAttr(d) + '</option>').join('');
+                camSel.innerHTML = '<option value="">— All —</option>' + cameras.map(c => '<option value="' + escapeAttr(c) + '">' + escapeAttr(c) + '</option>').join('');
+                if (curDev && devices.indexOf(curDev) !== -1) devSel.value = curDev;
+                if (curCam && cameras.indexOf(curCam) !== -1) camSel.value = curCam;
+            })
+            .catch(() => {});
     }
 
     function fetchOverview() {
@@ -302,7 +341,6 @@
                 renderTimeline(data);
                 renderPresence(data);
                 renderEvents(data);
-                fillActivityFilter(data.activity_distribution);
             })
             .catch(err => {
                 setError(err.message || 'Request failed');
@@ -328,8 +366,8 @@
         refreshTimer = setInterval(fetchOverview, REFRESH_INTERVAL_MS);
     }
 
-    document.getElementById('time_range').addEventListener('change', fetchOverview);
-    document.getElementById('model_key').addEventListener('change', fetchOverview);
+    document.getElementById('time_range').addEventListener('change', () => { fetchFilterOptions(); fetchOverview(); });
+    document.getElementById('model_key').addEventListener('change', () => { loadActivityLabels(); fetchOverview(); });
     document.getElementById('filter_person').addEventListener('change', fetchOverview);
     document.getElementById('filter_camera').addEventListener('change', fetchOverview);
     document.getElementById('filter_device').addEventListener('change', fetchOverview);
@@ -341,6 +379,8 @@
     document.getElementById('refresh_now').addEventListener('click', () => { fetchOverview(); });
 
     fetchPersons();
+    loadActivityLabels();
+    fetchFilterOptions();
     fetchOverview();
     scheduleRefresh();
 })();

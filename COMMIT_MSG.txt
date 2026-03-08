@@ -1,33 +1,31 @@
-Unify UI, add SQLite support, reorganize tests and samples
+Unify filters and UI across Dashboard, Windows, and Label pages
 
-Backend & database
-- Add SQLite support: connect_args for SQLite, compile UUID as TEXT for SQLite
-- On startup with SQLite, create tables from models (no Alembic)
-- Add docker-compose.yml with PostgreSQL service (port 5433) for optional use
+Filters (all pages with filters)
+- Standardise filter layout: 3 rows — (1) main controls, (2) Person/Device/Camera/Activity dropdowns, (3) checkboxes + actions
+- Use same order everywhere: Person → Device → Camera → Activity
+- Device/Camera: populate from GET /v1/dashboard/filter-options (all distinct values, no time filter so dropdowns always show options)
+- Activity: populate from model labels (/v1/models/{key})
+- Add .header { flex-direction: column } and .header .filter-row for consistent styling
 
-Tests
-- Reorganize tests into unit/, api/, integration/ with shared fixtures/
-- unit: test_health, test_normalize, test_infer_schema, test_database
-- api: test_ingest, test_face_api, test_golden_edge, test_multiple_people
-- integration: test_integration
-- Fix test_golden_edge fixture path (parent.parent/fixtures)
-- Update docs/development.md with new paths and test layout
+Dashboard
+- Rename title and h1 from "Overview Dashboard" to "Dashboard"
 
-Samples
-- Move test_request.json, test_request_valid.json, test_request_low_conf.json into samples/
-- Add samples/README.md; update test_scenarios.sh to use samples/test_request.json
-- Document samples and test_scenarios.sh in development.md
+Recent Windows
+- Replace Device/Camera text inputs with selects; add Activity select
+- Remove Track filter and Track column
+- Auto-refresh: "Auto-refresh (5s)" only (fixed 5s), move to row 3; remove Interval dropdown
+- Remove stats block (Windows count, With predictions, Avg conf, etc.)
+- Remove Last updated
 
-Person Management
-- Show "Gallery last updated" (created_at date) instead of version number on persons and person_detail pages
+Label Windows
+- Same 3-row filter style; Device/Camera/Activity as selects
+- Add Person filter (from /v1/persons); remove Track filter and Interval
+- Remove bulk section: "Apply label to selected" and "Assign person to selected"
+- Auto-refresh (5s) in row 3; remove Last updated
 
-UI: layout and navigation
-- Use max-width 1600px (Label Windows width) on all pages: dashboard, windows, label, persons, person_detail, device_dashboard
-- Add shared site header on every page: logo + nav (Dashboard, Recent Windows, Label Windows, Person Management)
-- Align device_dashboard styling with app theme (CSS variables, same header)
+Person Detail — Recent Windows tab
+- Add full filter bar: Model, Limit | Device, Camera, Activity | Only with predictions, Only low conf, Auto-refresh (5s), Refresh
+- Populate Model from /v1/models; Device/Camera from filter-options; Activity from model labels
 
-Branding
-- Replace "Cloud HAR" with "HAR Cloud App" in all template headers
-
-Label Windows table
-- Add Person and Face Conf columns (match Recent Windows); show person name with link to person detail and face confidence with color coding
+Cleanup
+- Remove unused .stats CSS from windows.html; align font-size and h1 color on label/windows

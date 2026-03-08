@@ -9,7 +9,7 @@
         * { box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
         .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
-        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
         .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
@@ -18,13 +18,13 @@
         .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
         .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
         .site-nav a:hover { background: var(--border); text-decoration: none; }
-        .header { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .header { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .header .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
         .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
-        .header select, .header input[type="number"], .header input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; }
+        .header select, .header input[type="number"], .header input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; font-size: 0.875rem; }
         .header .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-        .header .filters .cb { display: inline-flex; align-items: center; gap: 6px; }
+        .header .filters .cb { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; }
         .header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .bulk { margin-bottom: 12px; padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
         .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
         .btn:hover { background: var(--border); }
         .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -58,66 +58,65 @@
         </header>
         <h1>Label Windows</h1>
         <div class="header">
-            <div>
-                <label for="model_key">Model</label>
-                <select id="model_key">
-                    {% for m in models %}
-                    <option value="{{ m }}" {% if m == model_key %}selected{% endif %}>{{ m }}</option>
-                    {% endfor %}
-                </select>
+            <div class="filter-row">
+                <div>
+                    <label for="model_key">Model</label>
+                    <select id="model_key">
+                        {% for m in models %}
+                        <option value="{{ m }}" {% if m == model_key %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="limit">Limit</label>
+                    <select id="limit">
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100" selected>100</option>
+                    </select>
+                </div>
             </div>
-            <div>
-                <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh</label>
+            <div class="filter-row">
+                <div>
+                    <label for="filter_person">Person</label>
+                    <select id="filter_person">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_device">Device</label>
+                    <select id="filter_device">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_camera">Camera</label>
+                    <select id="filter_camera">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_activity">Activity</label>
+                    <select id="filter_activity">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
             </div>
-            <div>
-                <label for="interval">Interval</label>
-                <select id="interval">
-                    <option value="1">1s</option>
-                    <option value="3" selected>3s</option>
-                    <option value="5">5s</option>
-                    <option value="10">10s</option>
-                </select>
+            <div class="filter-row">
+                <div class="filters">
+                    <label class="cb"><input type="checkbox" id="filter_only_unlabeled"> Only unlabeled</label>
+                    <label class="cb"><input type="checkbox" id="filter_only_labeled"> Only labeled</label>
+                    <label class="cb"><input type="checkbox" id="filter_only_mismatches"> Only mismatches</label>
+                    <label for="filter_pred_conf">Pred conf below</label>
+                    <input type="number" id="filter_pred_conf" placeholder="e.g. 0.6" min="0" max="1" step="0.1" style="width:60px">
+                    <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
+                </div>
             </div>
-            <div>
-                <label for="limit">Limit</label>
-                <select id="limit">
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100" selected>100</option>
-                </select>
-            </div>
-            <div class="filters">
-                <label for="filter_device">Device</label>
-                <input type="text" id="filter_device" placeholder="device_id">
-                <label for="filter_camera">Camera</label>
-                <input type="text" id="filter_camera" placeholder="camera_id">
-                <label for="filter_track">Track</label>
-                <input type="number" id="filter_track" placeholder="track" min="0" style="width:70px">
-                <label class="cb"><input type="checkbox" id="filter_only_unlabeled"> Only unlabeled</label>
-                <label class="cb"><input type="checkbox" id="filter_only_labeled"> Only labeled</label>
-                <label class="cb"><input type="checkbox" id="filter_only_mismatches"> Only mismatches</label>
-                <label for="filter_pred_conf">Pred conf below</label>
-                <input type="number" id="filter_pred_conf" placeholder="e.g. 0.6" min="0" max="1" step="0.1" style="width:60px">
-            </div>
-            <div class="actions">
-                <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
-            </div>
-        </div>
-        <div class="bulk">
-            <label for="bulk_label">Apply label to selected:</label>
-            <select id="bulk_label"></select>
-            <button type="button" class="btn primary" id="bulk_apply">Apply to selected</button>
-            <button type="button" class="btn" id="bulk_unknown">Mark as unknown (clear)</button>
-            <span style="margin-left: 16px; color: var(--muted);">|</span>
-            <label for="bulk_person" style="margin-left: 16px;">Assign person to selected:</label>
-            <select id="bulk_person">
-                <option value="">— Load persons…</option>
-            </select>
-            <button type="button" class="btn primary" id="bulk_assign_person">Assign to selected</button>
-            <button type="button" class="btn" id="bulk_clear_person">Clear person</button>
         </div>
         <div class="meta">
-            <span id="last_updated">Last updated: —</span>
             <span id="last_error" class="error"></span>
         </div>
         <table>
@@ -150,12 +149,16 @@
     const API_KEY = {{ api_key|tojson }};
     const API_HEADERS = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
     let currentLabels = {{ labels|tojson }};
-    let currentPersons = [];
     let fetchInProgress = false;
     let refreshTimer = null;
     let currentRows = [];
     let currentPage = 1;
     let hasMore = false;
+
+    function escapeAttr(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
     function buildParams() {
         const params = new URLSearchParams();
@@ -164,18 +167,46 @@
         const limit = parseInt(document.getElementById('limit').value, 10);
         params.set('limit', limit);
         params.set('offset', (currentPage - 1) * limit);
-        const dev = document.getElementById('filter_device').value.trim();
+        const person = document.getElementById('filter_person').value;
+        if (person) params.set('person_id', person);
+        const dev = document.getElementById('filter_device').value;
         if (dev) params.set('device_id', dev);
-        const cam = document.getElementById('filter_camera').value.trim();
+        const cam = document.getElementById('filter_camera').value;
         if (cam) params.set('camera_id', cam);
-        const track = document.getElementById('filter_track').value;
-        if (track !== '') params.set('track_id', track);
+        const activity = document.getElementById('filter_activity').value;
+        if (activity) params.set('pred_label', activity);
         if (document.getElementById('filter_only_unlabeled').checked) params.set('only_unlabeled', 'true');
         if (document.getElementById('filter_only_labeled').checked) params.set('only_labeled', 'true');
         if (document.getElementById('filter_only_mismatches').checked) params.set('only_mismatches', 'true');
         const pc = document.getElementById('filter_pred_conf').value;
         if (pc !== '') params.set('max_pred_conf', pc);
         return params;
+    }
+
+    function fetchFilterOptions() {
+        fetch('/v1/dashboard/filter-options', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => {
+                const devSel = document.getElementById('filter_device');
+                const camSel = document.getElementById('filter_camera');
+                const curDev = devSel.value;
+                const curCam = camSel.value;
+                const devices = Array.isArray(data.devices) ? data.devices : [];
+                const cameras = Array.isArray(data.cameras) ? data.cameras : [];
+                devSel.innerHTML = '<option value="">— All —</option>' + devices.map(d => '<option value="' + escapeAttr(d) + '">' + escapeAttr(d) + '</option>').join('');
+                camSel.innerHTML = '<option value="">— All —</option>' + cameras.map(c => '<option value="' + escapeAttr(c) + '">' + escapeAttr(c) + '</option>').join('');
+                if (curDev && devices.indexOf(curDev) !== -1) devSel.value = curDev;
+                if (curCam && cameras.indexOf(curCam) !== -1) camSel.value = curCam;
+            })
+            .catch(() => {});
+    }
+
+    function fillActivityFilter(labels) {
+        const sel = document.getElementById('filter_activity');
+        const cur = sel.value;
+        const list = Array.isArray(labels) ? labels : [];
+        sel.innerHTML = '<option value="">— All —</option>' + list.map(l => '<option value="' + escapeAttr(l) + '">' + escapeAttr(l) + '</option>').join('');
+        if (cur && list.indexOf(cur) !== -1) sel.value = cur;
     }
 
     function formatTime(iso) {
@@ -275,71 +306,17 @@
             });
     }
 
-    function setPerson(windowId, personId, personName, trRow) {
-        const errEl = trRow ? trRow.querySelector('.row-error') : null;
-        if (errEl) errEl.textContent = '';
-        fetch('/v1/windows/' + encodeURIComponent(windowId) + '/person', {
-            method: 'POST',
-            headers: API_HEADERS,
-            body: JSON.stringify({ person_id: personId || null })
-        })
-            .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
-            .then((data) => {
-                if (trRow) {
-                    const personCell = trRow.querySelector('.row-person');
-                    const confCell = trRow.querySelector('.row-person-conf');
-                    if (personCell) {
-                        personCell.innerHTML = data.person_id
-                            ? '<a href="/persons/' + data.person_id + '">' + (data.person_name || shortId(data.person_id)) + '</a>'
-                            : '—';
-                    }
-                    if (confCell) confCell.innerHTML = data.person_id ? '<span class="conf-high">1.00</span>' : '—';
-                    const row = currentRows.find(r => r.id === windowId);
-                    if (row) {
-                        row.person_id = data.person_id || null;
-                        row.person_name = data.person_name || null;
-                        row.person_conf = data.person_id ? 1.0 : null;
-                    }
-                }
+    function fetchPersonFilter() {
+        fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : { persons: [] })
+            .then(data => {
+                const list = data.persons || [];
+                const sel = document.getElementById('filter_person');
+                const current = sel.value;
+                sel.innerHTML = '<option value="">— All —</option>' + list.map(p => '<option value="' + escapeAttr(p.id) + '">' + escapeAttr(p.name || p.id) + '</option>').join('');
+                if (current && list.some(p => p.id === current)) sel.value = current;
             })
-            .catch(err => {
-                if (errEl) errEl.textContent = err.message || 'Failed';
-            });
-    }
-
-    function fetchPersons() {
-        return fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
-            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-            .then(data => { currentPersons = (data && data.persons) ? data.persons : []; updateBulkPersonOptions(); })
-            .catch(() => { currentPersons = []; updateBulkPersonOptions(); });
-    }
-
-    function updateBulkPersonOptions() {
-        const sel = document.getElementById('bulk_person');
-        sel.innerHTML = '<option value="">— No person</option>' +
-            (currentPersons || []).map(p => '<option value="' + p.id + '">' + (p.name || p.id) + '</option>').join('');
-    }
-
-    function bulkAssignPerson() {
-        const personId = document.getElementById('bulk_person').value;
-        const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean);
-        if (!ids.length) return;
-        ids.forEach(id => {
-            const tr = document.querySelector('tr[data-id="' + id + '"]');
-            const person = currentPersons.find(p => p.id === personId);
-            setPerson(id, personId || null, person ? person.name : null, tr);
-        });
-        setTimeout(fetchData, 600);
-    }
-
-    function bulkClearPerson() {
-        const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean);
-        if (!ids.length) return;
-        ids.forEach(id => {
-            const tr = document.querySelector('tr[data-id="' + id + '"]');
-            setPerson(id, null, null, tr);
-        });
-        setTimeout(fetchData, 600);
+            .catch(() => {});
     }
 
     function fetchData() {
@@ -354,7 +331,6 @@
                 hasMore = (resp && resp.has_more === true);
                 renderTable(rows);
                 renderPagination();
-                document.getElementById('last_updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             })
             .catch(err => {
                 document.getElementById('last_error').textContent = 'Last error: ' + (err.message || 'Request failed');
@@ -362,41 +338,16 @@
             .finally(() => { fetchInProgress = false; });
     }
 
-    function bulkApply() {
-        const label = document.getElementById('bulk_label').value;
-        const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean);
-        if (!ids.length) return;
-        let done = 0;
-        ids.forEach(id => {
-            const tr = document.querySelector('tr[data-id="' + id + '"]');
-            setLabel(id, label, tr);
-            done++;
-        });
-        if (done) setTimeout(fetchData, 500);
-    }
-
-    function bulkUnknown() {
-        const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean);
-        if (!ids.length) return;
-        ids.forEach(id => {
-            const tr = document.querySelector('tr[data-id="' + id + '"]');
-            setLabel(id, '', tr);
-        });
-        setTimeout(fetchData, 500);
-    }
-
-    function updateBulkLabelOptions() {
-        const sel = document.getElementById('bulk_label');
-        sel.innerHTML = '<option value="">—</option>' + (currentLabels || []).map(l => '<option value="' + l + '">' + l + '</option>').join('');
-    }
-
     function loadModelLabels() {
         const model = document.getElementById('model_key').value;
-        if (!model) return Promise.resolve();
+        if (!model) { currentLabels = []; fillActivityFilter([]); return Promise.resolve(); }
         return fetch('/v1/models/' + encodeURIComponent(model), { headers: { 'X-API-Key': API_KEY } })
             .then(r => r.ok ? r.json() : Promise.reject())
-            .then(data => { currentLabels = data.labels || []; updateBulkLabelOptions(); })
-            .catch(() => { currentLabels = []; updateBulkLabelOptions(); });
+            .then(data => {
+                currentLabels = data.labels || [];
+                fillActivityFilter(currentLabels);
+            })
+            .catch(() => { currentLabels = []; fillActivityFilter([]); });
     }
 
     function renderPagination() {
@@ -425,31 +376,24 @@
     function scheduleRefresh() {
         if (refreshTimer) clearInterval(refreshTimer);
         if (!document.getElementById('auto_refresh').checked) return;
-        const sec = parseInt(document.getElementById('interval').value, 10) * 1000;
         refreshTimer = setInterval(() => {
             if (document.visibilityState === 'hidden') return;
             fetchData();
-        }, sec);
+        }, 5000);
     }
 
     document.getElementById('model_key').addEventListener('change', () => { currentPage = 1; loadModelLabels().then(fetchData); scheduleRefresh(); });
     document.getElementById('limit').addEventListener('change', () => { currentPage = 1; fetchData(); });
-    document.getElementById('interval').addEventListener('change', scheduleRefresh);
     document.getElementById('auto_refresh').addEventListener('change', scheduleRefresh);
-    ['filter_device','filter_camera','filter_track','filter_only_unlabeled','filter_only_labeled','filter_only_mismatches','filter_pred_conf'].forEach(id => {
+    ['filter_person','filter_device','filter_camera','filter_activity','filter_only_unlabeled','filter_only_labeled','filter_only_mismatches','filter_pred_conf'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', () => { currentPage = 1; fetchData(); });
     });
     document.getElementById('refresh_now').addEventListener('click', fetchData);
-    document.getElementById('bulk_apply').addEventListener('click', bulkApply);
-    document.getElementById('bulk_unknown').addEventListener('click', bulkUnknown);
-    document.getElementById('bulk_assign_person').addEventListener('click', bulkAssignPerson);
-    document.getElementById('bulk_clear_person').addEventListener('click', bulkClearPerson);
 
-    updateBulkLabelOptions();
-    fetchPersons();
-    fetchData();
-    scheduleRefresh();
+    fetchFilterOptions();
+    fetchPersonFilter();
+    loadModelLabels().then(() => { fetchData(); scheduleRefresh(); });
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') { if (refreshTimer) clearInterval(refreshTimer); refreshTimer = null; }
         else scheduleRefresh();

@@ -11,6 +11,7 @@ from typing import Tuple, Optional
 import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 from app.config import API_KEY, MODEL_KEY_DEFAULT, DATABASE_URL
 from app.database import get_db, engine, Base
@@ -33,6 +34,7 @@ from app.services import (
     create_pose_window_from_ingest,
     get_dashboard_overview,
     get_dashboard_windows,
+    get_dashboard_filter_options,
     get_window_by_id,
     get_windows,
     get_recent_windows_with_predictions,
@@ -63,6 +65,16 @@ def ensure_tables():
     if "sqlite" in DATABASE_URL.lower():
         import app.models  # noqa: F401 - register tables with Base
         Base.metadata.create_all(bind=engine)
+        # Add external_ref to persons if table existed before the column was added
+        with engine.connect() as conn:
+            r = conn.execute(text("PRAGMA table_info(persons)"))
+            rows = r.fetchall()
+            if rows:
+                col_names = [row[1] for row in rows]
+                if "external_ref" not in col_names:
+                    conn.execute(text("ALTER TABLE persons ADD COLUMN external_ref VARCHAR"))
+                    conn.commit()
+                    logger.info("SQLite: added column persons.external_ref")
         logger.info("SQLite: created tables from models.")
 
 
@@ -197,6 +209,7 @@ async def dashboard_windows(
     device_id: Optional[str] = None,
     camera_id: Optional[str] = None,
     track_id: Optional[int] = None,
+    person_id: Optional[UUID] = Query(None, description="Filter by person ID"),
     only_with_predictions: bool = Query(False),
     pred_label: Optional[str] = None,
     max_pred_conf: Optional[float] = Query(None, ge=0, le=1),
@@ -213,6 +226,7 @@ async def dashboard_windows(
         device_id=device_id,
         camera_id=camera_id,
         track_id=track_id,
+        person_id=person_id,
         only_with_predictions=only_with_predictions,
         pred_label=pred_label,
         max_pred_conf=max_pred_conf,
@@ -268,6 +282,19 @@ async def dashboard_overview(
         only_known_person=only_known_person,
     )
     return overview
+
+
+@app.get("/v1/dashboard/filter-options")
+async def dashboard_filter_options(
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+    since: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    until: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+):
+    """Distinct devices and cameras in the time range for dashboard filter dropdowns."""
+    since_dt = _parse_optional_datetime(since)
+    until_dt = _parse_optional_datetime(until)
+    return get_dashboard_filter_options(db, since=since_dt, until=until_dt)
 
 
 @app.get("/v1/windows/{window_id}")

@@ -115,7 +115,7 @@ All pages use a consistent layout (max-width 1600px) and a shared **site header*
 
 - **Label Windows** (`/windows/label`): Reached from Recent Windows. Table: Time, Window ID, Device, Camera, Track, Person, Face Conf, Activity, Set label, Predicted, Pred Conf, Match?, Actions. Bulk label and bulk person assignment. **Pagination** as in Recent Windows (centred at bottom). Same `GET /v1/dashboard/windows` API with `offset`.
 
-- **Person Management** (`/persons`) and **Person detail** (`/persons/{id}`): show **Gallery last updated** (date/time) instead of a version number, for when the face gallery was last changed.
+- **Person Management** (`/persons`) and **Person detail** (`/persons/{id}`): show **Gallery last updated** (date/time) instead of a version number, for when the face gallery was last changed. Person detail uses `GET /v1/persons/{id}/detail` for stats, activity distribution, timeline, and recent windows.
 
 ## Logging
 
