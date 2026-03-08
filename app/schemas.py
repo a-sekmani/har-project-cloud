@@ -118,6 +118,11 @@ class SetLabelBody(BaseModel):
     label_source: str = Field(default="manual")
 
 
+class SetWindowPersonBody(BaseModel):
+    """Body for POST /v1/windows/{id}/person. person_id=null clears the person."""
+    person_id: Optional[UUID] = Field(None, description="Person ID to assign, or null to clear")
+
+
 class PredictWindowBody(BaseModel):
     """Body for POST /v1/windows/{id}/predict."""
     model_key: str = Field(..., min_length=1)

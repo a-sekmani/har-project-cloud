@@ -106,6 +106,13 @@
             <select id="bulk_label"></select>
             <button type="button" class="btn primary" id="bulk_apply">Apply to selected</button>
             <button type="button" class="btn" id="bulk_unknown">Mark as unknown (clear)</button>
+            <span style="margin-left: 16px; color: var(--muted);">|</span>
+            <label for="bulk_person" style="margin-left: 16px;">Assign person to selected:</label>
+            <select id="bulk_person">
+                <option value="">— Load persons…</option>
+            </select>
+            <button type="button" class="btn primary" id="bulk_assign_person">Assign to selected</button>
+            <button type="button" class="btn" id="bulk_clear_person">Clear person</button>
         </div>
         <div class="meta">
             <span id="last_updated">Last updated: —</span>
@@ -140,6 +147,7 @@
     const API_KEY = {{ api_key|tojson }};
     const API_HEADERS = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
     let currentLabels = {{ labels|tojson }};
+    let currentPersons = [];
     let fetchInProgress = false;
     let refreshTimer = null;
     let currentRows = [];
@@ -209,8 +217,8 @@
                 '<td>' + (row.device_id ?? '—') + '</td>' +
                 '<td>' + (row.camera_id ?? '—') + '</td>' +
                 '<td>' + (row.track_id ?? '—') + '</td>' +
-                '<td>' + personCell + '</td>' +
-                '<td><span class="' + confClass(personConf) + '">' + (personConf != null ? personConf.toFixed(2) : '—') + '</span></td>' +
+                '<td class="row-person">' + personCell + '</td>' +
+                '<td class="row-person-conf"><span class="' + confClass(personConf) + '">' + (personConf != null ? personConf.toFixed(2) : '—') + '</span></td>' +
                 '<td class="row-activity">' + (row.label || '—') + '</td>' +
                 '<td><select class="set-label-sel" data-id="' + (row.id || '') + '"><option value="">—</option>' + opts + '</select> <button type="button" class="btn btn-sm set-label-btn" data-id="' + (row.id || '') + '">Set</button></td>' +
                 '<td>' + (pred.pred_label || '—') + '</td>' +
@@ -258,6 +266,73 @@
             .catch(err => {
                 if (errEl) errEl.textContent = err.message || 'Failed';
             });
+    }
+
+    function setPerson(windowId, personId, personName, trRow) {
+        const errEl = trRow ? trRow.querySelector('.row-error') : null;
+        if (errEl) errEl.textContent = '';
+        fetch('/v1/windows/' + encodeURIComponent(windowId) + '/person', {
+            method: 'POST',
+            headers: API_HEADERS,
+            body: JSON.stringify({ person_id: personId || null })
+        })
+            .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
+            .then((data) => {
+                if (trRow) {
+                    const personCell = trRow.querySelector('.row-person');
+                    const confCell = trRow.querySelector('.row-person-conf');
+                    if (personCell) {
+                        personCell.innerHTML = data.person_id
+                            ? '<a href="/persons/' + data.person_id + '">' + (data.person_name || shortId(data.person_id)) + '</a>'
+                            : '—';
+                    }
+                    if (confCell) confCell.innerHTML = data.person_id ? '<span class="conf-high">1.00</span>' : '—';
+                    const row = currentRows.find(r => r.id === windowId);
+                    if (row) {
+                        row.person_id = data.person_id || null;
+                        row.person_name = data.person_name || null;
+                        row.person_conf = data.person_id ? 1.0 : null;
+                    }
+                }
+            })
+            .catch(err => {
+                if (errEl) errEl.textContent = err.message || 'Failed';
+            });
+    }
+
+    function fetchPersons() {
+        return fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(data => { currentPersons = (data && data.persons) ? data.persons : []; updateBulkPersonOptions(); })
+            .catch(() => { currentPersons = []; updateBulkPersonOptions(); });
+    }
+
+    function updateBulkPersonOptions() {
+        const sel = document.getElementById('bulk_person');
+        sel.innerHTML = '<option value="">— No person</option>' +
+            (currentPersons || []).map(p => '<option value="' + p.id + '">' + (p.name || p.id) + '</option>').join('');
+    }
+
+    function bulkAssignPerson() {
+        const personId = document.getElementById('bulk_person').value;
+        const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean);
+        if (!ids.length) return;
+        ids.forEach(id => {
+            const tr = document.querySelector('tr[data-id="' + id + '"]');
+            const person = currentPersons.find(p => p.id === personId);
+            setPerson(id, personId || null, person ? person.name : null, tr);
+        });
+        setTimeout(fetchData, 600);
+    }
+
+    function bulkClearPerson() {
+        const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id).filter(Boolean);
+        if (!ids.length) return;
+        ids.forEach(id => {
+            const tr = document.querySelector('tr[data-id="' + id + '"]');
+            setPerson(id, null, null, tr);
+        });
+        setTimeout(fetchData, 600);
     }
 
     function fetchData() {
@@ -336,8 +411,11 @@
     document.getElementById('refresh_now').addEventListener('click', fetchData);
     document.getElementById('bulk_apply').addEventListener('click', bulkApply);
     document.getElementById('bulk_unknown').addEventListener('click', bulkUnknown);
+    document.getElementById('bulk_assign_person').addEventListener('click', bulkAssignPerson);
+    document.getElementById('bulk_clear_person').addEventListener('click', bulkClearPerson);
 
     updateBulkLabelOptions();
+    fetchPersons();
     fetchData();
     scheduleRefresh();
     document.addEventListener('visibilitychange', () => {

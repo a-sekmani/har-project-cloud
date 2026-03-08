@@ -21,6 +21,7 @@ from app.schemas import (
     PersonResultSchema,
     PredictWindowBody,
     SetLabelBody,
+    SetWindowPersonBody,
     TopKItemSchema,
     WindowSchema,
 )
@@ -34,6 +35,7 @@ from app.services import (
     get_windows,
     get_recent_windows_with_predictions,
     run_predict_for_window,
+    set_window_person,
     update_window_label,
 )
 from app.utils import isoformat_utc
@@ -231,6 +233,24 @@ async def set_window_label(window_id: UUID, body: SetLabelBody, api_key: str = D
     if w is None:
         raise HTTPException(status_code=404, detail="Window not found")
     return {"id": str(w.id), "label": w.label}
+
+
+@app.post("/v1/windows/{window_id}/person")
+async def set_window_person_endpoint(
+    window_id: UUID,
+    body: SetWindowPersonBody,
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+):
+    """Assign or clear the person for a window. Send person_id=null to clear."""
+    w = set_window_person(db, window_id, body.person_id)
+    if w is None:
+        raise HTTPException(status_code=404, detail="Window not found" if get_window_by_id(db, window_id) is None else "Person not found")
+    return {
+        "id": str(w.id),
+        "person_id": str(w.person_id) if w.person_id else None,
+        "person_name": w.person_name,
+    }
 
 
 @app.post("/v1/windows/{window_id}/predict")

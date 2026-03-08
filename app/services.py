@@ -29,6 +29,29 @@ def update_window_label(db: Session, window_id: UUID, label: str) -> PoseWindow 
     return w
 
 
+def set_window_person(db: Session, window_id: UUID, person_id: UUID | None) -> PoseWindow | None:
+    """Set or clear the identified person for a window. person_id=None clears."""
+    w = get_window_by_id(db, window_id)
+    if w is None:
+        return None
+    if person_id is None:
+        w.person_id = None
+        w.person_name = None
+        w.person_conf = None
+        w.gallery_version = None
+    else:
+        person = db.query(Person).filter(Person.id == person_id).first()
+        if person is None:
+            return None
+        w.person_id = person.id
+        w.person_name = person.name
+        w.person_conf = 1.0  # manual assignment
+        w.gallery_version = None
+    db.commit()
+    db.refresh(w)
+    return w
+
+
 def get_recent_windows_with_predictions(db: Session, limit: int = 100, model_key: str | None = None) -> list[dict]:
     windows = db.query(PoseWindow).order_by(desc(PoseWindow.created_at)).limit(limit).all()
     out = []
