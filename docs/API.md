@@ -795,6 +795,7 @@ Get windows with predictions for the dashboard. Supports filtering and paginatio
 |-----------|------|---------|-------------|
 | model_key | string | - | Filter by model |
 | limit | integer | 100 | Maximum results (1-500) |
+| offset | integer | 0 | Skip this many windows (for pagination) |
 | device_id | string | - | Filter by device |
 | camera_id | string | - | Filter by camera |
 | track_id | integer | - | Filter by track ID |
@@ -805,13 +806,14 @@ Get windows with predictions for the dashboard. Supports filtering and paginatio
 | only_labeled | boolean | false | Only show labeled windows |
 | only_mismatches | boolean | false | Only show label/prediction mismatches |
 
-**Response:**
+**Response:** Object with `data` (array of windows) and `has_more` (boolean; true if more pages exist).
 ```json
-[
-  {
-    "id": "807dbb7e-61a4-4353-98ab-86da002cb291",
-    "created_at": "2026-03-01T17:23:34.781775",
-    "device_id": "projecthost",
+{
+  "data": [
+    {
+      "id": "807dbb7e-61a4-4353-98ab-86da002cb291",
+      "created_at": "2026-03-01T17:23:34.781775",
+      "device_id": "projecthost",
     "camera_id": "default",
     "track_id": 1,
     "ts_start_ms": 1772385813818,
@@ -827,13 +829,103 @@ Get windows with predictions for the dashboard. Supports filtering and paginatio
       "created_at": "2026-03-01T17:23:35.123456"
     }
   }
-]
+  ],
+  "has_more": true
+}
 ```
 
 **Example:**
 ```bash
 # Get windows with low confidence predictions
 curl -s "http://localhost:8000/v1/dashboard/windows?model_key=edge17_v6_lowlr&max_pred_conf=0.6&limit=50" \
+  -H "X-API-Key: dev-key"
+```
+
+---
+
+### GET /v1/dashboard/overview
+
+Dashboard overview: aggregated stats, activity distribution, timeline, person presence, and recent important events (alerts). Used by the Overview Dashboard page. All times are UTC.
+
+**Headers:**
+| Header | Required | Description |
+|--------|----------|-------------|
+| X-API-Key | Yes | API key for authentication |
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| since | string | ISO datetime (inclusive) – start of time range |
+| until | string | ISO datetime (inclusive) – end of time range |
+| model_key | string | Model for predictions (optional; when set, only windows with that model’s prediction are included in activity stats) |
+| person_id | UUID | Filter by person |
+| camera_id | string | Filter by camera |
+| device_id | string | Filter by device |
+| activity | string | Filter by prediction label (`pred_label`) |
+| only_alerts | boolean | Only include windows whose prediction is in the alert activities set (e.g. falling_down, chest_pain) |
+| only_unknown_person | boolean | Only windows with no identified person |
+| only_known_person | boolean | Only windows with an identified person |
+
+**Response:**
+```json
+{
+  "stats": {
+    "total_windows": 42,
+    "recognized_persons": 2,
+    "unknown_person_windows": 5,
+    "detected_activities": 4,
+    "fall_alerts": 1,
+    "last_update": "2026-03-04T12:00:00.000000"
+  },
+  "activity_distribution": [
+    { "label": "drink_water", "count": 15 },
+    { "label": "reading", "count": 10 }
+  ],
+  "activity_timeline": [
+    { "time": "2026-03-04T11:00:00.000000", "count": 8 },
+    { "time": "2026-03-04T12:00:00.000000", "count": 12 }
+  ],
+  "timeline_by_day": false,
+  "person_presence": [
+    {
+      "person_id": "550e8400-e29b-41d4-a716-446655440000",
+      "person_name": "Ahmad",
+      "last_seen": "2026-03-04T12:05:00.000000",
+      "window_count": 20,
+      "top_activity": "reading"
+    },
+    {
+      "person_id": null,
+      "person_name": "Unknown",
+      "last_seen": "2026-03-04T11:58:00.000000",
+      "window_count": 5,
+      "top_activity": "standing"
+    }
+  ],
+  "recent_important_events": [
+    {
+      "window_id": "807dbb7e-61a4-4353-98ab-86da002cb291",
+      "time": "2026-03-04T12:00:00.000000",
+      "person_name": "Ahmad",
+      "activity": "falling_down",
+      "confidence": 0.88
+    }
+  ]
+}
+```
+
+| Section | Description |
+|---------|-------------|
+| stats | Total windows in range, distinct persons, unknown-person windows, distinct activities, count of alert activities, last window time |
+| activity_distribution | Count of windows per predicted label |
+| activity_timeline | Time-bucketed counts for charts (by hour when range ≤24h, by day when range >24h) |
+| timeline_by_day | When true, timeline buckets are by calendar day (for week/month ranges); frontend may show dates instead of times |
+| person_presence | Per person (or "Unknown"): last seen, window count, most common activity |
+| recent_important_events | Windows whose prediction is in the alert set (e.g. fall, chest pain); up to 50, newest first |
+
+**Example:**
+```bash
+curl -s "http://localhost:8000/v1/dashboard/overview?since=2026-03-04T10:00:00Z&until=2026-03-04T12:00:00Z&model_key=edge17_v6_lowlr" \
   -H "X-API-Key: dev-key"
 ```
 

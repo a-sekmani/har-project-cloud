@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
+    <title>Overview Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
-        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; }
+        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
         * { box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
         .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
         h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
+        h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 12px 0; }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
         .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
@@ -18,9 +20,31 @@
         .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
         .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
         .site-nav a:hover { background: var(--border); text-decoration: none; }
+        .filters-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 20px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .filters-bar label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
+        .filters-bar select, .filters-bar input[type="text"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; }
+        .filters-bar .cb { display: inline-flex; align-items: center; gap: 6px; }
+        .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+        .stat-card .value { font-size: 1.25rem; font-weight: 600; }
         .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 16px; }
-        .placeholder { text-align: center; padding: 60px 20px; color: var(--muted); }
-        .placeholder p { margin: 10px 0; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+        .chart-container { position: relative; height: 220px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: var(--border); font-weight: 600; }
+        tr:hover { background: #f1f5f9; }
+        .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
+        .btn:hover { background: var(--border); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn-sm { padding: 4px 8px; font-size: 0.75rem; }
+        .events-list { list-style: none; padding: 0; margin: 0; }
+        .events-list li { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+        .events-list li:last-child { border-bottom: none; }
+        .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
+        .meta .error { color: var(--red); }
     </style>
 </head>
 <body>
@@ -30,17 +54,296 @@
             <nav class="site-nav">
                 <a href="/dashboard">Dashboard</a>
                 <a href="/windows">Recent Windows</a>
-                <a href="/windows/label">Label Windows</a>
                 <a href="/persons">Person Management</a>
             </nav>
         </header>
-        <h1>Dashboard</h1>
-        <div class="card">
-            <div class="placeholder">
-                <p>Dashboard is under construction.</p>
-                <p>Use the navigation above to access available features.</p>
+        <h1>Overview Dashboard</h1>
+        <div class="filters-bar">
+            <div>
+                <label for="time_range">Time range</label>
+                <select id="time_range">
+                    <option value="24h" selected>Last 24 hours</option>
+                    <option value="7d">Last week</option>
+                    <option value="30d">Last month</option>
+                </select>
+            </div>
+            <div>
+                <label for="model_key">Model</label>
+                <select id="model_key">
+                    {% for m in models %}
+                    <option value="{{ m }}" {% if m == model_key %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="filter_person">Person</label>
+                <select id="filter_person">
+                    <option value="">— All —</option>
+                </select>
+            </div>
+            <div>
+                <label for="filter_camera">Camera</label>
+                <input type="text" id="filter_camera" placeholder="camera_id">
+            </div>
+            <div>
+                <label for="filter_device">Device</label>
+                <input type="text" id="filter_device" placeholder="device_id">
+            </div>
+            <div>
+                <label for="filter_activity">Activity</label>
+                <select id="filter_activity">
+                    <option value="">— All —</option>
+                </select>
+            </div>
+            <div class="cb">
+                <input type="checkbox" id="filter_only_alerts"> Show only alerts
+            </div>
+            <div class="cb">
+                <input type="checkbox" id="filter_only_unknown"> Only unknown persons
+            </div>
+            <div class="cb">
+                <input type="checkbox" id="filter_only_known"> Only known persons
+            </div>
+            <div>
+                <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
+            </div>
+            <div>
+                <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
+            </div>
+        </div>
+        <div class="meta">
+            <span id="last_updated">Last updated: —</span>
+            <span id="last_error" class="error"></span>
+        </div>
+        <div class="stats-row" id="stats_row">
+            <div class="stat-card"><div class="label">Total activities</div><div class="value" id="stat_total">0</div></div>
+            <div class="stat-card"><div class="label">Well-known person</div><div class="value" id="stat_persons">0</div></div>
+            <div class="stat-card"><div class="label">Detected Activities</div><div class="value" id="stat_activities">0</div></div>
+            <div class="stat-card"><div class="label">Fall Alerts</div><div class="value" id="stat_alerts">0</div></div>
+            <div class="stat-card"><div class="label">Last Update</div><div class="value" id="stat_last_update">—</div></div>
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <h2>Activity Distribution</h2>
+                <div class="chart-container"><canvas id="chart_distribution"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>Activity Timeline</h2>
+                <div class="chart-container"><canvas id="chart_timeline"></canvas></div>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <h2>Person Presence</h2>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr><th>Person</th><th>Last seen</th><th>Windows</th><th>Top activity</th></tr>
+                        </thead>
+                        <tbody id="tbody_presence">
+                            <tr><td colspan="4" style="text-align:center;color:var(--muted);">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Recent Important Events</h2>
+                <ul class="events-list" id="events_list">
+                    <li style="color:var(--muted);">Loading…</li>
+                </ul>
             </div>
         </div>
     </div>
+    <script>
+(function() {
+    const API_KEY = {{ api_key|tojson }};
+    let chartDistribution = null;
+    let chartTimeline = null;
+    let refreshTimer = null;
+    const REFRESH_INTERVAL_MS = 5000;
+
+    function getTimeRange() {
+        const v = document.getElementById('time_range').value;
+        const now = new Date();
+        let since = new Date(now);
+        if (v === '24h') since.setDate(since.getDate() - 1);
+        else if (v === '7d') since.setDate(since.getDate() - 7);
+        else if (v === '30d') since.setDate(since.getDate() - 30);
+        return { since: since.toISOString(), until: now.toISOString() };
+    }
+
+    function buildParams() {
+        const tr = getTimeRange();
+        const params = new URLSearchParams();
+        params.set('since', tr.since);
+        params.set('until', tr.until);
+        const model = document.getElementById('model_key').value;
+        if (model) params.set('model_key', model);
+        const person = document.getElementById('filter_person').value;
+        if (person) params.set('person_id', person);
+        const camera = document.getElementById('filter_camera').value.trim();
+        if (camera) params.set('camera_id', camera);
+        const device = document.getElementById('filter_device').value.trim();
+        if (device) params.set('device_id', device);
+        const activity = document.getElementById('filter_activity').value;
+        if (activity) params.set('activity', activity);
+        if (document.getElementById('filter_only_alerts').checked) params.set('only_alerts', 'true');
+        if (document.getElementById('filter_only_unknown').checked) params.set('only_unknown_person', 'true');
+        if (document.getElementById('filter_only_known').checked) params.set('only_known_person', 'true');
+        return params;
+    }
+
+    function setError(msg) {
+        const el = document.getElementById('last_error');
+        if (el) el.textContent = msg || '';
+    }
+
+    function setLastUpdated(iso) {
+        const el = document.getElementById('last_updated');
+        if (el) el.textContent = 'Last updated: ' + (iso ? new Date(iso).toLocaleString() : '—');
+    }
+
+    function renderStats(data) {
+        const s = data.stats || {};
+        document.getElementById('stat_total').textContent = s.total_windows ?? 0;
+        document.getElementById('stat_persons').textContent = s.recognized_persons ?? 0;
+        document.getElementById('stat_activities').textContent = s.detected_activities ?? 0;
+        document.getElementById('stat_alerts').textContent = s.fall_alerts ?? 0;
+        document.getElementById('stat_last_update').textContent = s.last_update ? new Date(s.last_update).toLocaleString() : '—';
+    }
+
+    function renderDistribution(data) {
+        const dist = data.activity_distribution || [];
+        const ctx = document.getElementById('chart_distribution').getContext('2d');
+        if (chartDistribution) chartDistribution.destroy();
+        if (dist.length === 0) {
+            chartDistribution = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+            return;
+        }
+        chartDistribution = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: dist.map(d => d.label),
+                datasets: [{ data: dist.map(d => d.count), backgroundColor: ['#2563eb','#16a34a','#ea580c','#dc2626','#7c3aed','#0891b2','#ca8a04','#db2777'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    function renderTimeline(data) {
+        const tl = data.activity_timeline || [];
+        const ctx = document.getElementById('chart_timeline').getContext('2d');
+        if (chartTimeline) chartTimeline.destroy();
+        if (tl.length === 0) {
+            chartTimeline = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+            return;
+        }
+        const isDaily = data.timeline_by_day === true;
+        const labels = tl.map(d => {
+            const t = new Date(d.time);
+            return isDaily ? t.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        });
+        chartTimeline = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{ label: 'Activity', data: tl.map(d => d.count), backgroundColor: '#2563eb' }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
+    }
+
+    function renderPresence(data) {
+        const list = data.person_presence || [];
+        const tbody = document.getElementById('tbody_presence');
+        if (!list.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);">No data.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = list.map(p => {
+            const name = (p.person_name || 'Unknown').trim() || 'Unknown';
+            const last = p.last_seen ? new Date(p.last_seen).toLocaleString() : '—';
+            return '<tr><td>' + (p.person_id ? '<a href="/persons/' + p.person_id + '">' + name + '</a>' : name) + '</td><td>' + last + '</td><td>' + (p.window_count ?? 0) + '</td><td>' + (p.top_activity || '—') + '</td></tr>';
+        }).join('');
+    }
+
+    function renderEvents(data) {
+        const list = data.recent_important_events || [];
+        const ul = document.getElementById('events_list');
+        if (!list.length) {
+            ul.innerHTML = '<li style="color:var(--muted);">No recent alerts.</li>';
+            return;
+        }
+        ul.innerHTML = list.map(e => {
+            const time = e.time ? new Date(e.time).toLocaleString() : '—';
+            const link = '/windows?window_id=' + encodeURIComponent(e.window_id || '');
+            return '<li><span>' + time + '</span> <strong>' + (e.person_name || 'Unknown') + '</strong> ' + (e.activity || '') + ' (' + (e.confidence != null ? (e.confidence * 100).toFixed(0) + '%' : '—') + ') <a href="' + link + '" class="btn btn-sm">View Details</a></li>';
+        }).join('');
+    }
+
+    function fillActivityFilter(dist) {
+        const sel = document.getElementById('filter_activity');
+        const current = sel.value;
+        const labels = [...new Set((dist || []).map(d => d.label).filter(Boolean))].sort();
+        sel.innerHTML = '<option value="">— All —</option>' + labels.map(l => '<option value="' + l + '">' + l + '</option>').join('');
+        if (labels.includes(current)) sel.value = current;
+    }
+
+    function fetchOverview() {
+        const params = buildParams();
+        const url = '/v1/dashboard/overview?' + params.toString();
+        fetch(url, { headers: { 'X-API-Key': API_KEY } })
+            .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
+            .then(data => {
+                setError('');
+                setLastUpdated(data.stats && data.stats.last_update);
+                renderStats(data);
+                renderDistribution(data);
+                renderTimeline(data);
+                renderPresence(data);
+                renderEvents(data);
+                fillActivityFilter(data.activity_distribution);
+            })
+            .catch(err => {
+                setError(err.message || 'Request failed');
+            });
+    }
+
+    function fetchPersons() {
+        fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
+            .then(r => r.ok ? r.json() : { persons: [] })
+            .then(data => {
+                const list = data.persons || [];
+                const sel = document.getElementById('filter_person');
+                const current = sel.value;
+                sel.innerHTML = '<option value="">— All —</option>' + list.map(p => '<option value="' + p.id + '">' + (p.name || p.id) + '</option>').join('');
+                if (current && list.some(p => p.id === current)) sel.value = current;
+            })
+            .catch(() => {});
+    }
+
+    function scheduleRefresh() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        if (!document.getElementById('auto_refresh').checked) return;
+        refreshTimer = setInterval(fetchOverview, REFRESH_INTERVAL_MS);
+    }
+
+    document.getElementById('time_range').addEventListener('change', fetchOverview);
+    document.getElementById('model_key').addEventListener('change', fetchOverview);
+    document.getElementById('filter_person').addEventListener('change', fetchOverview);
+    document.getElementById('filter_camera').addEventListener('change', fetchOverview);
+    document.getElementById('filter_device').addEventListener('change', fetchOverview);
+    document.getElementById('filter_activity').addEventListener('change', fetchOverview);
+    document.getElementById('filter_only_alerts').addEventListener('change', fetchOverview);
+    document.getElementById('filter_only_unknown').addEventListener('change', fetchOverview);
+    document.getElementById('filter_only_known').addEventListener('change', fetchOverview);
+    document.getElementById('auto_refresh').addEventListener('change', scheduleRefresh);
+    document.getElementById('refresh_now').addEventListener('click', () => { fetchOverview(); });
+
+    fetchPersons();
+    fetchOverview();
+    scheduleRefresh();
+})();
+    </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+from datetime import datetime, UTC
 from uuid import UUID
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, Query
 from fastapi.responses import HTMLResponse
@@ -30,6 +31,7 @@ from app.health import router as health_router
 from app.face.routes import router as face_router
 from app.services import (
     create_pose_window_from_ingest,
+    get_dashboard_overview,
     get_dashboard_windows,
     get_window_by_id,
     get_windows,
@@ -191,6 +193,7 @@ async def dashboard_windows(
     db: Session = Depends(get_db),
     model_key: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     device_id: Optional[str] = None,
     camera_id: Optional[str] = None,
     track_id: Optional[int] = None,
@@ -201,11 +204,12 @@ async def dashboard_windows(
     only_labeled: bool = Query(False),
     only_mismatches: bool = Query(False),
 ):
-    """List windows for dashboard with optional filters; each item includes prediction with model_version."""
-    rows = get_dashboard_windows(
+    """List windows for dashboard with optional filters; returns {data, has_more} for pagination."""
+    result = get_dashboard_windows(
         db,
         model_key=model_key,
         limit=limit,
+        offset=offset,
         device_id=device_id,
         camera_id=camera_id,
         track_id=track_id,
@@ -216,7 +220,54 @@ async def dashboard_windows(
         only_labeled=only_labeled,
         only_mismatches=only_mismatches,
     )
-    return rows
+    return result
+
+
+def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Parse optional ISO datetime string to UTC datetime."""
+    if not value or not value.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
+@app.get("/v1/dashboard/overview")
+async def dashboard_overview(
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+    since: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    until: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    model_key: Optional[str] = None,
+    person_id: Optional[UUID] = None,
+    camera_id: Optional[str] = None,
+    device_id: Optional[str] = None,
+    activity: Optional[str] = Query(None, description="Filter by prediction label (pred_label)"),
+    only_alerts: bool = Query(False),
+    only_unknown_person: bool = Query(False),
+    only_known_person: bool = Query(False),
+):
+    """Dashboard overview: stats, activity distribution, timeline, person presence, recent important events."""
+    since_dt = _parse_optional_datetime(since)
+    until_dt = _parse_optional_datetime(until)
+    overview = get_dashboard_overview(
+        db,
+        since=since_dt,
+        until=until_dt,
+        model_key=model_key,
+        person_id=person_id,
+        camera_id=camera_id,
+        device_id=device_id,
+        pred_label=activity,
+        only_alerts=only_alerts,
+        only_unknown_person=only_unknown_person,
+        only_known_person=only_known_person,
+    )
+    return overview
 
 
 @app.get("/v1/windows/{window_id}")
@@ -362,9 +413,18 @@ async def ingest_window(
 
 # --- Web Pages (HTML) ---
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    """Dashboard home page (placeholder for future use)."""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+async def dashboard(request: Request, model_key: Optional[str] = None):
+    """Dashboard overview page: stats, filters, activity distribution, timeline, person presence, events."""
+    key = model_key or MODEL_KEY_DEFAULT
+    models = list_models()
+    if key and key not in models:
+        key = models[0] if models else None
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "model_key": key,
+        "models": models,
+        "api_key": API_KEY,
+    })
 
 
 @app.get("/windows", response_class=HTMLResponse)

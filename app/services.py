@@ -1,11 +1,13 @@
 """Business logic: windows, predictions, dashboard."""
 import json
-from datetime import datetime, UTC
+from collections import Counter
+from datetime import datetime, UTC, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
+from app.constants import ALERT_ACTIVITIES
 from app.models import PoseWindow, WindowPrediction, Person
 from app.schemas import IngestWindowBody
 from app.utils import isoformat_utc
@@ -87,6 +89,7 @@ def get_dashboard_windows(
     db: Session,
     model_key: str | None,
     limit: int = 100,
+    offset: int = 0,
     device_id: str | None = None,
     camera_id: str | None = None,
     track_id: int | None = None,
@@ -96,8 +99,8 @@ def get_dashboard_windows(
     only_unlabeled: bool = False,
     only_labeled: bool = False,
     only_mismatches: bool = False,
-) -> list[dict]:
-    """Windows for dashboard with optional filters; each row has latest prediction per model_key (LEFT JOIN–style)."""
+) -> dict:
+    """Windows for dashboard with optional filters; each row has latest prediction per model_key. Returns {data, has_more}."""
     from app.models_meta import get_labels_and_version
 
     query = db.query(PoseWindow).order_by(desc(PoseWindow.created_at))
@@ -111,7 +114,7 @@ def get_dashboard_windows(
         only_with_predictions or pred_label is not None or max_pred_conf is not None
         or only_unlabeled or only_labeled or only_mismatches
     ) else limit
-    windows = query.limit(fetch_limit).all()
+    windows = query.offset(offset).limit(fetch_limit).all()
 
     model_version = None
     if model_key:
@@ -186,7 +189,8 @@ def get_dashboard_windows(
         out.append(row)
         if len(out) >= limit:
             break
-    return out
+    has_more = len(windows) == fetch_limit
+    return {"data": out, "has_more": has_more}
 
 
 def create_window_prediction(
@@ -290,3 +294,169 @@ def run_predict_for_window(
     if return_probs:
         out["probs"] = [{"label": l, "score": s} for l, s in all_probs]
     return out
+
+
+def get_dashboard_overview(
+    db: Session,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    model_key: str | None = None,
+    person_id: UUID | None = None,
+    camera_id: str | None = None,
+    device_id: str | None = None,
+    pred_label: str | None = None,
+    only_alerts: bool = False,
+    only_unknown_person: bool = False,
+    only_known_person: bool = False,
+    max_windows: int = 5000,
+) -> dict:
+    """
+    Dashboard overview: stats, activity distribution, timeline, person presence, recent important events.
+    Filters on PoseWindow.created_at (since/until) and optional person_id, camera_id, device_id;
+    prediction filters (pred_label, only_alerts) apply when model_key is set.
+    """
+    query = db.query(PoseWindow).order_by(desc(PoseWindow.created_at))
+    if since is not None:
+        query = query.filter(PoseWindow.created_at >= since)
+    if until is not None:
+        query = query.filter(PoseWindow.created_at <= until)
+    if person_id is not None:
+        query = query.filter(PoseWindow.person_id == person_id)
+    if camera_id is not None and camera_id != "":
+        query = query.filter(PoseWindow.camera_id == camera_id)
+    if device_id is not None and device_id != "":
+        query = query.filter(PoseWindow.device_id == device_id)
+    if only_unknown_person:
+        query = query.filter(PoseWindow.person_id.is_(None))
+    if only_known_person:
+        query = query.filter(PoseWindow.person_id.isnot(None))
+    windows = query.limit(max_windows).all()
+
+    latest_pred_by_window: dict[UUID, WindowPrediction] = {}
+    if model_key and windows:
+        window_ids = [w.id for w in windows]
+        preds = (
+            db.query(WindowPrediction)
+            .filter(
+                WindowPrediction.model_key == model_key,
+                WindowPrediction.window_id.in_(window_ids),
+            )
+            .order_by(desc(WindowPrediction.created_at))
+            .all()
+        )
+        for p in preds:
+            if p.window_id not in latest_pred_by_window:
+                latest_pred_by_window[p.window_id] = p
+
+    # Rows: (window, prediction or None)
+    rows: list[tuple[PoseWindow, WindowPrediction | None]] = []
+    for w in windows:
+        pred = latest_pred_by_window.get(w.id) if model_key else None
+        if model_key and pred is None:
+            continue
+        if pred_label is not None and (pred is None or pred.pred_label != pred_label):
+            continue
+        if only_alerts and (pred is None or pred.pred_label not in ALERT_ACTIVITIES):
+            continue
+        rows.append((w, pred))
+
+    # Stats
+    person_ids_seen = {w.person_id for w, _ in rows if w.person_id is not None}
+    unknown_count = sum(1 for w, _ in rows if w.person_id is None)
+    pred_labels_seen = {p.pred_label for _, p in rows if p is not None}
+    alert_count = sum(1 for _, p in rows if p is not None and p.pred_label in ALERT_ACTIVITIES)
+    last_created = max((w.created_at for w, _ in rows), default=None)
+
+    stats = {
+        "total_windows": len(rows),
+        "recognized_persons": len(person_ids_seen),
+        "unknown_person_windows": unknown_count,
+        "detected_activities": len(pred_labels_seen),
+        "fall_alerts": alert_count,
+        "last_update": isoformat_utc(last_created) if last_created else None,
+    }
+
+    # Activity distribution
+    dist_counter: Counter[str] = Counter()
+    for _, p in rows:
+        if p is not None:
+            dist_counter[p.pred_label] += 1
+    activity_distribution = [{"label": label, "count": count} for label, count in dist_counter.most_common()]
+
+    # Activity timeline: by day when range > 24h (week/month), else by hour
+    activity_timeline: list[dict] = []
+    timeline_by_day = False
+    if rows and since is not None and until is not None:
+        range_seconds = (until - since).total_seconds()
+        bucket_by_day = range_seconds > 86400  # > 24h
+        timeline_by_day = bucket_by_day
+        buckets: dict[datetime, int] = {}
+        for w, _ in rows:
+            t = w.created_at
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=UTC)
+            if bucket_by_day:
+                bucket_ts = t.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                bucket_ts = t.replace(minute=0, second=0, microsecond=0)
+            buckets[bucket_ts] = buckets.get(bucket_ts, 0) + 1
+        for bucket_ts in sorted(buckets.keys()):
+            activity_timeline.append({
+                "time": isoformat_utc(bucket_ts),
+                "count": buckets[bucket_ts],
+            })
+
+    # Person presence: (last_seen, label, person_name) per person_id
+    presence_by_person: dict[UUID | None, list[tuple[datetime, str, str]]] = {}
+    for w, p in rows:
+        pid = w.person_id
+        name = (w.person_name or "Unknown").strip() or "Unknown"
+        if pid is None:
+            name = "Unknown"
+        t = w.created_at
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=UTC)
+        label = p.pred_label if p is not None else ""
+        if pid not in presence_by_person:
+            presence_by_person[pid] = []
+        presence_by_person[pid].append((t, label, name))
+
+    person_presence = []
+    for pid, entries in presence_by_person.items():
+        last_seen = max(e[0] for e in entries)
+        labels = [e[1] for e in entries if e[1]]
+        top_activity = Counter(labels).most_common(1)[0][0] if labels else None
+        person_name = entries[0][2] if entries else "Unknown"
+        person_presence.append({
+            "person_id": str(pid) if pid else None,
+            "person_name": person_name,
+            "last_seen": isoformat_utc(last_seen),
+            "window_count": len(entries),
+            "top_activity": top_activity,
+        })
+    person_presence.sort(key=lambda x: x["last_seen"] or "", reverse=True)
+
+    # Recent important events (alerts only)
+    recent_important_events = []
+    for w, p in rows:
+        if p is None or p.pred_label not in ALERT_ACTIVITIES:
+            continue
+        recent_important_events.append({
+            "window_id": str(w.id),
+            "time": isoformat_utc(w.created_at),
+            "person_name": (w.person_name or "Unknown").strip() or "Unknown",
+            "activity": p.pred_label,
+            "confidence": p.pred_conf,
+        })
+    recent_important_events.sort(key=lambda x: x["time"], reverse=True)
+    recent_important_events = recent_important_events[:50]
+
+    return {
+        "stats": stats,
+        "activity_distribution": activity_distribution,
+        "activity_timeline": activity_timeline,
+        "timeline_by_day": timeline_by_day,
+        "person_presence": person_presence,
+        "recent_important_events": recent_important_events,
+    }

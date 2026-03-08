@@ -10,6 +10,7 @@ har-project-cloud/
     schemas.py           # Pydantic request/response (inference, label, predict, ingest)
     edge_schemas.py      # Pydantic schemas for edge frame_event (for future use)
     config.py            # Configuration (API_KEY, DATABASE_URL, MODELS_DIR, etc.)
+    constants.py         # Application constants (e.g. ALERT_ACTIVITIES for dashboard)
     logging.py           # Logging setup
     health.py            # Health check (GET /health)
     database.py          # DB connection and session
@@ -106,10 +107,15 @@ Many tests use in-memory SQLite; some may expect PostgreSQL (e.g. `DATABASE_URL`
 
 ## Web UI
 
-All pages use a consistent layout (max-width 1600px) and a shared **site header** with the app name **HAR Cloud App** and navigation: **Dashboard**, **Recent Windows**, **Label Windows**, **Person Management**. This allows moving between the dashboard, windows list, labeling, and person/face management from any page.
+All pages use a consistent layout (max-width 1600px) and a shared **site header** with the app name **HAR Cloud App** and navigation: **Dashboard**, **Recent Windows**, **Person Management**. (Label Windows is not in the main nav; it is reached from within Recent Windows.)
+
+- **Overview Dashboard** (`/dashboard`): Uses `GET /v1/dashboard/overview` to show: **Stats bar** (five cards: Total activities, Well-known person, Detected Activities, Fall Alerts, Last Update with date and time); **Quick filters** (time range: Last 24 hours / Last week / Last month, Model, Person, Camera, Device, Activity, Show only alerts, Only unknown persons, Only known persons); **Activity Distribution** chart (doughnut) and **Activity Timeline** (by hour for 24h, by day for week/month); **Person Presence** table and **Recent Important Events** (alerts) with “View Details” links. Auto-refresh every 5 seconds. See [API – GET /v1/dashboard/overview](API.md#get-v1dashboardoverview).
+
+- **Recent Windows** (`/windows`): Lists pose windows with predictions. Filters: model, device, camera, track, pred label, only with predictions, low confidence. **Pagination**: page numbers (Prev, 1, 2, 3…, Next) at the bottom centre; each page shows up to the selected limit (e.g. 100). Uses `GET /v1/dashboard/windows` with `offset` and `limit`; response is `{ data, has_more }`. "Open Label Windows" button links to Label Windows. See [API – GET /v1/dashboard/windows](API.md#get-v1dashboardwindows).
+
+- **Label Windows** (`/windows/label`): Reached from Recent Windows. Table: Time, Window ID, Device, Camera, Track, Person, Face Conf, Activity, Set label, Predicted, Pred Conf, Match?, Actions. Bulk label and bulk person assignment. **Pagination** as in Recent Windows (centred at bottom). Same `GET /v1/dashboard/windows` API with `offset`.
 
 - **Person Management** (`/persons`) and **Person detail** (`/persons/{id}`): show **Gallery last updated** (date/time) instead of a version number, for when the face gallery was last changed.
-- **Label Windows** (`/windows/label`): table columns include **Person** (name, link to person if identified) and **Face Conf** (face recognition confidence), in addition to Time, Window ID, Device, Camera, Track, Activity, Set label, Predicted, Pred Conf, Match?, Actions.
 
 ## Logging
 

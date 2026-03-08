@@ -48,6 +48,9 @@
         .modal h3 { margin-top: 0; }
         .modal pre { font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
         .modal .close { float: right; cursor: pointer; }
+        .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; padding: 12px 0; }
+        .pagination .btn-page { min-width: 36px; }
+        .pagination .btn-page.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     </style>
 </head>
 <body>
@@ -57,7 +60,6 @@
             <nav class="site-nav">
                 <a href="/dashboard">Dashboard</a>
                 <a href="/windows">Recent Windows</a>
-                <a href="/windows/label">Label Windows</a>
                 <a href="/persons">Person Management</a>
             </nav>
         </header>
@@ -144,6 +146,7 @@
                 <tr><td colspan="12" style="text-align:center;color:var(--muted);">Loading…</td></tr>
             </tbody>
         </table>
+        <div class="pagination" id="pagination"></div>
     </div>
     <div class="modal" id="detail_modal">
         <div class="modal-content">
@@ -159,12 +162,16 @@
     let fetchInProgress = false;
     let refreshTimer = null;
     let currentRows = [];
+    let currentPage = 1;
+    let hasMore = false;
 
     function buildParams() {
         const params = new URLSearchParams();
         const model = document.getElementById('model_key').value;
         if (model) params.set('model_key', model);
-        params.set('limit', document.getElementById('limit').value);
+        const limit = parseInt(document.getElementById('limit').value, 10);
+        params.set('limit', limit);
+        params.set('offset', (currentPage - 1) * limit);
         const dev = document.getElementById('filter_device').value.trim();
         if (dev) params.set('device_id', dev);
         const cam = document.getElementById('filter_camera').value.trim();
@@ -288,10 +295,12 @@
         const url = '/v1/dashboard/windows?' + buildParams().toString();
         fetch(url, { headers: { 'X-API-Key': API_KEY } })
             .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
-            .then(data => {
-                const rows = Array.isArray(data) ? data : [];
+            .then(resp => {
+                const rows = (resp && resp.data !== undefined) ? resp.data : (Array.isArray(resp) ? resp : []);
+                hasMore = (resp && resp.has_more === true);
                 renderTable(rows);
                 updateStats(rows);
+                renderPagination();
                 document.getElementById('last_updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             })
             .catch(err => {
@@ -324,6 +333,29 @@
             .catch(() => { document.getElementById('detail_body').textContent = 'Failed to load.'; document.getElementById('detail_modal').classList.add('show'); });
     }
 
+    function renderPagination() {
+        const limit = parseInt(document.getElementById('limit').value, 10);
+        const el = document.getElementById('pagination');
+        let html = '';
+        if (currentPage > 1) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (currentPage - 1) + '">Prev</button>';
+        }
+        const maxShow = Math.max(currentPage, 5);
+        for (let p = 1; p <= maxShow; p++) {
+            html += '<button type="button" class="btn btn-page' + (p === currentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+        }
+        if (hasMore) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (currentPage + 1) + '">Next</button>';
+        }
+        el.innerHTML = html || '<span style="color:var(--muted);">Page ' + currentPage + '</span>';
+        el.querySelectorAll('.btn-page').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const p = parseInt(btn.dataset.page, 10);
+                if (p >= 1) { currentPage = p; fetchData(); }
+            });
+        });
+    }
+
     function scheduleRefresh() {
         if (refreshTimer) clearInterval(refreshTimer);
         if (!document.getElementById('auto_refresh').checked) return;
@@ -334,16 +366,16 @@
         }, sec);
     }
 
-    document.getElementById('model_key').addEventListener('change', () => { loadModelLabels(); fetchData(); scheduleRefresh(); });
-    document.getElementById('limit').addEventListener('change', fetchData);
+    document.getElementById('model_key').addEventListener('change', () => { currentPage = 1; loadModelLabels(); fetchData(); scheduleRefresh(); });
+    document.getElementById('limit').addEventListener('change', () => { currentPage = 1; fetchData(); });
     document.getElementById('interval').addEventListener('change', scheduleRefresh);
     document.getElementById('auto_refresh').addEventListener('change', scheduleRefresh);
-    document.getElementById('filter_device').addEventListener('change', fetchData);
-    document.getElementById('filter_camera').addEventListener('change', fetchData);
-    document.getElementById('filter_track').addEventListener('change', fetchData);
-    document.getElementById('filter_pred_label').addEventListener('change', fetchData);
-    document.getElementById('filter_only_pred').addEventListener('change', fetchData);
-    document.getElementById('filter_low_conf').addEventListener('change', fetchData);
+    document.getElementById('filter_device').addEventListener('change', () => { currentPage = 1; fetchData(); });
+    document.getElementById('filter_camera').addEventListener('change', () => { currentPage = 1; fetchData(); });
+    document.getElementById('filter_track').addEventListener('change', () => { currentPage = 1; fetchData(); });
+    document.getElementById('filter_pred_label').addEventListener('change', () => { currentPage = 1; fetchData(); });
+    document.getElementById('filter_only_pred').addEventListener('change', () => { currentPage = 1; fetchData(); });
+    document.getElementById('filter_low_conf').addEventListener('change', () => { currentPage = 1; fetchData(); });
     document.getElementById('refresh_now').addEventListener('click', () => { fetchData(); });
     document.getElementById('clear_filters').addEventListener('click', () => {
         document.getElementById('filter_device').value = '';
@@ -352,6 +384,7 @@
         document.getElementById('filter_pred_label').value = '';
         document.getElementById('filter_only_pred').checked = false;
         document.getElementById('filter_low_conf').checked = false;
+        currentPage = 1;
         fetchData();
     });
     document.getElementById('link_label').href = '/windows/label?model_key=' + encodeURIComponent(document.getElementById('model_key').value);
