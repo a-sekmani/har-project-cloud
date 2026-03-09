@@ -15,9 +15,10 @@ har-project-cloud/
     health.py            # Health check (GET /health)
     database.py          # DB connection and session
     models.py            # SQLAlchemy ORM (Device, ActivityEvent, Person, PersonFace,
-                         # GalleryVersion, PoseWindow, WindowPrediction)
+                         # GalleryVersion, PoseWindow, WindowPrediction, AlertStatus)
     models_meta.py       # List models and load label_map / version from models/
-    services.py          # Business logic (windows, predictions, dashboard data)
+    services.py          # Business logic (windows, predictions, dashboard, unknown persons, alerts)
+    system.py            # System status (GET /v1/system/status)
     api_schemas.py       # Pydantic API response schemas
     utils.py             # Shared utilities (e.g. isoformat_utc for datetime serialization)
     face/                # Face recognition
@@ -28,13 +29,16 @@ har-project-cloud/
     ml/                  # Feature extraction and ONNX inference
       features.py        # keypoints → model input (1, window_size, 85)
       onnx_runner.py     # ONNX load and inference
-    templates/           # HTML pages
-      dashboard.html
-      windows.html       # Recent windows (Date, Time, ID, Device, FPS, Track, Person, etc.)
-      label.html
-      persons.html
-      person_detail.html
+    templates/           # HTML pages (all lang="en", English only)
+      alerts.html        # Alerts / Critical Events
+      dashboard.html     # Overview (stats, charts, person presence, events)
       device_dashboard.html
+      label.html         # Label windows
+      person_detail.html # Person detail (faces, stats, timeline)
+      persons.html       # Person management
+      system.html        # Models / System status
+      unknown_persons.html  # Unknown Persons (unidentified windows, assign/create person)
+      windows.html       # Recent windows
   data/
     person_faces/        # Stored face images (served at /face-images)
   scripts/
@@ -107,15 +111,21 @@ Many tests use in-memory SQLite; some may expect PostgreSQL (e.g. `DATABASE_URL`
 
 ## Web UI
 
-All pages use a consistent layout (max-width 1600px) and a shared **site header** with the app name **HAR Cloud App** and navigation: **Dashboard**, **Recent Windows**, **Person Management**. (Label Windows is not in the main nav; it is reached from within Recent Windows.)
+All pages use a consistent layout (max-width 1600px) and a shared **site header** with the app name **HAR Cloud App** and navigation: **Overview**, **Recent Windows**, **Person Management**, **Unknown Persons**, **Alerts / Critical Events**, **Models / System**. (Label Windows is reached from Recent Windows.)
 
-- **Overview Dashboard** (`/dashboard`): Uses `GET /v1/dashboard/overview` to show: **Stats bar** (five cards: Total activities, Well-known person, Detected Activities, Fall Alerts, Last Update with date and time); **Quick filters** (time range: Last 24 hours / Last week / Last month, Model, Person, Camera, Device, Activity, Show only alerts, Only unknown persons, Only known persons); **Activity Distribution** chart (doughnut) and **Activity Timeline** (by hour for 24h, by day for week/month); **Person Presence** table and **Recent Important Events** (alerts) with “View Details” links. Auto-refresh every 5 seconds. See [API – GET /v1/dashboard/overview](API.md#get-v1dashboardoverview).
+- **Overview** (`/dashboard`): Uses `GET /v1/dashboard/overview` to show: **Stats bar** (Total activities, Well-known person, Detected Activities, Fall Alerts, Last Update); **Filters** (time range: Last 24 hours / Last week / Last month, Model, Person, Camera, Device, Activity, Show only alerts, Only unknown persons, Only known persons); **Activity Distribution** chart (doughnut) and **Activity Timeline** (by hour or day); **Person Presence** table and **Recent Important Events** (alerts) with “View Details” links. Auto-refresh every 5 seconds. See [API – GET /v1/dashboard/overview](API.md#get-v1dashboardoverview).
 
 - **Recent Windows** (`/windows`): Lists pose windows with predictions. Filters: model, device, camera, track, pred label, only with predictions, low confidence. **Pagination**: page numbers (Prev, 1, 2, 3…, Next) at the bottom centre; each page shows up to the selected limit (e.g. 100). Uses `GET /v1/dashboard/windows` with `offset` and `limit`; response is `{ data, has_more }`. "Open Label Windows" button links to Label Windows. See [API – GET /v1/dashboard/windows](API.md#get-v1dashboardwindows).
 
 - **Label Windows** (`/windows/label`): Reached from Recent Windows. Table: Time, Window ID, Device, Camera, Track, Person, Face Conf, Activity, Set label, Predicted, Pred Conf, Match?, Actions. Bulk label and bulk person assignment. **Pagination** as in Recent Windows (centred at bottom). Same `GET /v1/dashboard/windows` API with `offset`.
 
-- **Person Management** (`/persons`) and **Person detail** (`/persons/{id}`): show **Gallery last updated** (date/time) instead of a version number, for when the face gallery was last changed. Person detail uses `GET /v1/persons/{id}/detail` for stats, activity distribution, timeline, and recent windows.
+- **Person Management** (`/persons`) and **Person detail** (`/persons/{id}`): Gallery last updated (date/time). Person detail uses `GET /v1/persons/{id}/detail` for stats, activity distribution, timeline, and recent windows.
+
+- **Unknown Persons** (`/unknown-persons`): Windows with no identified person. Stats (Total Unknown Windows, Unknown Tracks, Tracks Today, Most Common Activity, Cameras With Unknowns); charts (activity distribution, timeline); filters (time range, Model, Device, Camera, Activity, Max pred/face conf, Show only alerts, Group by track); table (100 per page, pagination); actions: Assign to Person, Create Person From Window; Unknown Person Alerts section with pagination. Uses `GET /v1/unknown-persons/overview` and `GET /v1/dashboard/windows?only_unknown_person=true`. See [API – Unknown Persons](API.md#unknown-persons-api).
+
+- **Alerts / Critical Events** (`/alerts`): Windows with alert-type predictions (e.g. falling_down, chest_pain). Filters: time range, Model, Status. Acknowledge and Resolve buttons. Uses `GET /v1/alerts` and `POST /v1/alerts/{window_id}/status`. See [API – Alerts](API.md#alerts-api).
+
+- **Models / System** (`/system`): System status (current model, face gallery version, edge status, health). Uses `GET /v1/system/status`.
 
 ## Logging
 

@@ -49,8 +49,10 @@ htmlcov/
 # Docker
 .dockerignore
 
-# Data storage (face images, etc.)
+# Data storage (face images, DBs)
 data/
+*.db
+test.db
 
 # Cursor AI
 .cursor/

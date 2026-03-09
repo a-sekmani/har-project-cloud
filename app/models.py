@@ -251,3 +251,15 @@ class WindowPrediction(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False, index=True)
 
     window = relationship("PoseWindow", back_populates="predictions")
+
+
+class AlertStatus(Base):
+    """
+    Alert status per window: new / acknowledged / resolved.
+    Used by the Alerts / Critical Events page.
+    """
+    __tablename__ = "alert_status"
+
+    window_id = Column(UUID(as_uuid=True), ForeignKey("pose_windows.id", ondelete="CASCADE"), primary_key=True)
+    status = Column(String(32), nullable=False, default="new")  # new, acknowledged, resolved
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)

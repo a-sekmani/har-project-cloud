@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Models / System</title>
+    <style>
+        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --red: #dc2626; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
+        h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 12px 0; color: var(--text); }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); }
+        .site-logo:hover { text-decoration: none; color: var(--accent); }
+        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
+        .site-nav a:hover { background: var(--border); text-decoration: none; }
+        .site-nav a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .card h2 { margin-top: 0; }
+        .sys-row { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 8px; font-size: 0.9rem; }
+        .sys-row .key { color: var(--muted); min-width: 140px; }
+        .sys-row .value { font-family: ui-monospace, monospace; font-size: 0.85em; }
+        .sys-row .value pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+        .health-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+        .health-item { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 0.875rem; }
+        .health-item.ok { background: #dcfce7; color: #166534; }
+        .health-item.error { background: #fee2e2; color: #991b1b; }
+        .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
+        .btn:hover { background: var(--border); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
+        .meta .error { color: var(--red); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="site-header">
+            <a href="/dashboard" class="site-logo">HAR Cloud App</a>
+            <nav class="site-nav">
+                <a href="/dashboard">Overview</a>
+                <a href="/windows">Recent Windows</a>
+                <a href="/persons">Person Management</a>
+                <a href="/unknown-persons">Unknown Persons</a>
+                <a href="/alerts">Alerts / Critical Events</a>
+                <a href="/system" class="active">Models / System</a>
+            </nav>
+        </header>
+        <h1>Models / System</h1>
+        <div style="margin-bottom: 16px;">
+            <button type="button" class="btn primary" id="refresh_btn">Refresh</button>
+        </div>
+        <div class="meta"><span id="last_error" class="error"></span></div>
+
+        <div class="card">
+            <h2>Current Activity Model</h2>
+            <div id="section_model"></div>
+        </div>
+        <div class="card">
+            <h2>Face Gallery Status</h2>
+            <div id="section_gallery"></div>
+        </div>
+        <div class="card">
+            <h2>Edge Status</h2>
+            <div id="section_edge"></div>
+        </div>
+        <div class="card">
+            <h2>Health</h2>
+            <div id="section_health" class="health-grid"></div>
+        </div>
+    </div>
+    <script>
+(function() {
+    const API_KEY = {{ api_key|tojson }};
+
+    function row(key, value) {
+        const v = value == null || value === '' ? '—' : (typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value));
+        return '<div class="sys-row"><span class="key">' + key + '</span><span class="value">' + (v.indexOf('\n') >= 0 ? '<pre>' + v + '</pre>' : v) + '</span></div>';
+    }
+
+    function render(data) {
+        const m = data.current_activity_model || {};
+        document.getElementById('section_model').innerHTML =
+            row('model_key', m.model_key) +
+            row('version', m.version) +
+            row('input_shape', m.input_shape) +
+            row('feature_spec', m.feature_spec) +
+            row('date_loaded', m.date_loaded);
+
+        const g = data.face_gallery || {};
+        document.getElementById('section_gallery').innerHTML =
+            row('gallery_version', g.gallery_version) +
+            row('persons_count', g.persons_count) +
+            row('faces_count', g.faces_count) +
+            row('last_sync', g.last_sync);
+
+        const e = data.edge_status || {};
+        document.getElementById('section_edge').innerHTML =
+            row('Last window received', e.last_window_at) +
+            row('Windows today', e.windows_today) +
+            row('Last active camera', e.last_active_camera) +
+            row('Windows with person_id', e.windows_with_person_id);
+
+        const h = data.health || {};
+        const healthNames = { database: 'Database', face_gallery: 'Face Gallery', model_availability: 'Model Availability', prediction_service: 'Prediction Service' };
+        document.getElementById('section_health').innerHTML = Object.keys(healthNames).map(function(k) {
+            const status = h[k] === 'ok' ? 'ok' : 'error';
+            return '<div class="health-item ' + status + '">' + healthNames[k] + ': ' + status + '</div>';
+        }).join('');
+    }
+
+    function fetchStatus() {
+        document.getElementById('last_error').textContent = '';
+        fetch('/v1/system/status', { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(render)
+            .catch(function(err) {
+                document.getElementById('last_error').textContent = 'Error: ' + (err.message || 'Failed to load');
+            });
+    }
+
+    document.getElementById('refresh_btn').addEventListener('click', fetchStatus);
+    fetchStatus();
+})();
+    </script>
+</body>
+</html>

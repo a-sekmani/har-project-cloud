@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unknown Persons</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --red: #dc2626; --orange: #ea580c; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
+        h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 12px 0; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); }
+        .site-logo:hover { text-decoration: none; color: var(--accent); }
+        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
+        .site-nav a:hover { background: var(--border); text-decoration: none; }
+        .site-nav a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .header { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+        .header .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
+        .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
+        .header select, .header input[type="number"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; font-size: 0.875rem; }
+        .header .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+        .header .filters .cb { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; }
+        .header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+        @media (max-width: 700px) { .stats-row { grid-template-columns: 1fr 1fr; } }
+        .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+        .stat-card .value { font-size: 1.25rem; font-weight: 600; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 16px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+        .chart-container { position: relative; height: 220px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: var(--border); font-weight: 600; }
+        tr:hover { background: #f1f5f9; }
+        .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
+        .btn:hover { background: var(--border); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn-sm { padding: 4px 8px; font-size: 0.75rem; margin: 0 2px; }
+        .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
+        .meta .error { color: var(--red); }
+        .win-id { font-family: ui-monospace, monospace; font-size: 0.85em; }
+        .conf-low { color: var(--red); }
+        .conf-mid { color: var(--orange); }
+        .conf-high { color: var(--green); }
+        .empty { text-align: center; padding: 40px; color: var(--muted); }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+        .modal.show { display: flex; }
+        .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 8px; max-width: 420px; width: 100%; padding: 20px; }
+        .modal h3 { margin-top: 0; }
+        .modal .close { float: right; cursor: pointer; font-size: 1.2rem; }
+        .alerts-section { margin-top: 24px; }
+        .track-group-header { background: #e2e8f0; font-weight: 600; cursor: pointer; }
+        .track-group-header:hover { background: #cbd5e1; }
+        .track-group-header .toggler { display: inline-block; width: 1em; }
+        tr.track-group-row { display: table-row; }
+        tr.track-group-row.collapsed { display: none; }
+        .track-group-header td { vertical-align: middle; }
+        .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; padding: 12px 0; }
+        .pagination .btn-page { min-width: 36px; }
+        .pagination .btn-page.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="site-header">
+            <a href="/dashboard" class="site-logo">HAR Cloud App</a>
+            <nav class="site-nav">
+                <a href="/dashboard">Overview</a>
+                <a href="/windows">Recent Windows</a>
+                <a href="/persons">Person Management</a>
+                <a href="/unknown-persons" class="active">Unknown Persons</a>
+                <a href="/alerts">Alerts / Critical Events</a>
+                <a href="/system">Models / System</a>
+            </nav>
+        </header>
+        <h1>Unknown Persons</h1>
+        <div class="header">
+            <div class="filter-row">
+                <div>
+                    <label for="time_range">Time range</label>
+                    <select id="time_range">
+                        <option value="24h">Last 24 hours</option>
+                        <option value="7d" selected>Last week</option>
+                        <option value="30d">Last month</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="model_key">Model</label>
+                    <select id="model_key">
+                        {% for m in models %}
+                        <option value="{{ m }}" {% if m == model_key %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="filter-row">
+                <div>
+                    <label for="filter_device">Device</label>
+                    <select id="filter_device">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_camera">Camera</label>
+                    <select id="filter_camera">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filter_activity">Activity</label>
+                    <select id="filter_activity">
+                        <option value="">— All —</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="max_pred_conf">Max pred conf</label>
+                    <select id="max_pred_conf">
+                        <option value="">—</option>
+                        <option value="0.3">≤0.3</option>
+                        <option value="0.5">≤0.5</option>
+                        <option value="0.6">≤0.6</option>
+                        <option value="0.8">≤0.8</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="max_face_conf">Max face conf</label>
+                    <select id="max_face_conf">
+                        <option value="">—</option>
+                        <option value="0.3">≤0.3</option>
+                        <option value="0.5">≤0.5</option>
+                        <option value="0.6">≤0.6</option>
+                        <option value="0.8">≤0.8</option>
+                    </select>
+                </div>
+            </div>
+            <div class="filter-row">
+                <div class="filters">
+                    <label class="cb"><input type="checkbox" id="filter_only_alerts"> Show only alerts</label>
+                    <label class="cb"><input type="checkbox" id="group_by_track"> Group by track</label>
+                    <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn primary" id="refresh_btn">Refresh</button>
+                    <button type="button" class="btn" id="create_person_btn" disabled>Create Person From Window</button>
+                    <button type="button" class="btn" id="assign_btn" disabled>Assign to Person</button>
+                </div>
+            </div>
+        </div>
+        <div class="meta"><span id="last_error" class="error"></span></div>
+        <div class="stats-row" id="stats_row">
+            <div class="stat-card"><div class="label">Total Unknown Windows</div><div class="value" id="stat_windows">0</div></div>
+            <div class="stat-card"><div class="label">Unknown Tracks</div><div class="value" id="stat_tracks">0</div></div>
+            <div class="stat-card"><div class="label">Tracks Today</div><div class="value" id="stat_tracks_today">0</div></div>
+            <div class="stat-card"><div class="label">Most Common Activity</div><div class="value" id="stat_activity">—</div></div>
+            <div class="stat-card"><div class="label">Cameras With Unknowns</div><div class="value" id="stat_cameras">0</div></div>
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <h2>Unknown Activity Distribution</h2>
+                <div class="chart-container"><canvas id="chart_distribution"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>Unknown Windows Timeline</h2>
+                <div class="chart-container"><canvas id="chart_timeline"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Unknown Windows</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select_all" title="Select all"></th>
+                        <th>Time</th>
+                        <th>Camera</th>
+                        <th>Track ID</th>
+                        <th>Predicted Activity</th>
+                        <th>Pred Conf</th>
+                        <th>Face Conf</th>
+                        <th>Window ID</th>
+                        <th>Duration</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody">
+                    <tr><td colspan="10" class="empty">Loading…</td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="pagination_windows"></div>
+        </div>
+        <div class="card alerts-section" id="alerts_section">
+            <h2>Unknown Person Alerts</h2>
+            <p class="meta">Unknown windows with alert-type activity (e.g. falling_down, chest_pain).</p>
+            <table>
+                <thead><tr><th>Time</th><th>Camera</th><th>Activity</th><th>Conf</th><th>Actions</th></tr></thead>
+                <tbody id="tbody_alerts">
+                    <tr><td colspan="5" class="empty">Loading…</td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="pagination_alerts"></div>
+        </div>
+    </div>
+    <div class="modal" id="assign_modal">
+        <div class="modal-content">
+            <span class="close" id="assign_modal_close">&times;</span>
+            <h3>Assign to Person</h3>
+            <p>Select a person to assign the selected windows to.</p>
+            <div style="margin: 12px 0;">
+                <label for="assign_person_select">Person</label>
+                <select id="assign_person_select" style="width: 100%; padding: 8px; margin-top: 4px;">
+                    <option value="">— Select —</option>
+                </select>
+            </div>
+            <button type="button" class="btn primary" id="assign_confirm">Assign</button>
+        </div>
+    </div>
+    <div class="modal" id="create_person_modal">
+        <div class="modal-content">
+            <span class="close" id="create_person_modal_close">&times;</span>
+            <h3>Create Person From Window</h3>
+            <p id="create_person_hint">Create a new person and link the selected windows to them.</p>
+            <div style="margin: 12px 0;">
+                <label for="create_person_name">Name</label>
+                <input type="text" id="create_person_name" placeholder="Person name" style="width: 100%; padding: 8px; margin-top: 4px;">
+            </div>
+            <div style="margin: 12px 0;">
+                <label for="create_person_face">Upload Face (optional)</label>
+                <input type="file" id="create_person_face" accept="image/*" style="width: 100%; margin-top: 4px;">
+            </div>
+            <div id="create_person_status" class="meta" style="margin: 8px 0;"></div>
+            <button type="button" class="btn primary" id="create_person_confirm">Create &amp; Link</button>
+        </div>
+    </div>
+    <script>
+(function() {
+    const API_KEY = {{ api_key|tojson }};
+    const ALERT_ACTIVITIES = ['falling_down', 'chest_pain', 'nausea_vomiting', 'headache', 'back_pain'];
+    let chartDistribution = null;
+    let chartTimeline = null;
+    let refreshTimer = null;
+    const REFRESH_INTERVAL_MS = 5000;
+    let currentPage = 1;
+    let hasMoreWindows = false;
+    let alertCurrentPage = 1;
+    let alertHasMore = false;
+
+    function getTimeRange() {
+        const v = document.getElementById('time_range').value;
+        const now = new Date();
+        const until = now.toISOString();
+        let since = new Date(now);
+        if (v === '24h') since.setHours(since.getHours() - 24);
+        else if (v === '7d') since.setDate(since.getDate() - 7);
+        else if (v === '30d') since.setDate(since.getDate() - 30);
+        return { since: since.toISOString(), until: until };
+    }
+
+    function buildOverviewParams() {
+        const tr = getTimeRange();
+        const params = new URLSearchParams();
+        params.set('since', tr.since);
+        params.set('until', tr.until);
+        const model = document.getElementById('model_key').value;
+        if (model) params.set('model_key', model);
+        return params;
+    }
+
+    const WINDOWS_PAGE_SIZE = 100;
+    const ALERTS_PAGE_SIZE = 100;
+
+    function buildWindowsParams() {
+        const tr = getTimeRange();
+        const params = new URLSearchParams();
+        params.set('since', tr.since);
+        params.set('until', tr.until);
+        params.set('only_unknown_person', 'true');
+        params.set('only_with_predictions', 'true');
+        params.set('limit', String(WINDOWS_PAGE_SIZE));
+        params.set('offset', String((currentPage - 1) * WINDOWS_PAGE_SIZE));
+        const model = document.getElementById('model_key').value;
+        if (model) params.set('model_key', model);
+        const dev = document.getElementById('filter_device').value;
+        if (dev) params.set('device_id', dev);
+        const cam = document.getElementById('filter_camera').value;
+        if (cam) params.set('camera_id', cam);
+        const activity = document.getElementById('filter_activity').value;
+        if (activity) params.set('pred_label', activity);
+        const maxPred = document.getElementById('max_pred_conf').value;
+        if (maxPred) params.set('max_pred_conf', maxPred);
+        const maxFace = document.getElementById('max_face_conf').value;
+        if (maxFace) params.set('max_face_conf', maxFace);
+        if (document.getElementById('filter_only_alerts').checked) params.set('only_alerts', 'true');
+        return params;
+    }
+
+    function buildAlertsParams() {
+        const tr = getTimeRange();
+        const params = new URLSearchParams();
+        params.set('since', tr.since);
+        params.set('until', tr.until);
+        params.set('only_unknown_person', 'true');
+        params.set('only_with_predictions', 'true');
+        params.set('only_alerts', 'true');
+        params.set('limit', String(ALERTS_PAGE_SIZE));
+        params.set('offset', String((alertCurrentPage - 1) * ALERTS_PAGE_SIZE));
+        const model = document.getElementById('model_key').value;
+        if (model) params.set('model_key', model);
+        const dev = document.getElementById('filter_device').value;
+        if (dev) params.set('device_id', dev);
+        const cam = document.getElementById('filter_camera').value;
+        if (cam) params.set('camera_id', cam);
+        return params;
+    }
+
+    function setError(msg) {
+        const el = document.getElementById('last_error');
+        if (el) el.textContent = msg || '';
+    }
+
+    function renderStats(data) {
+        const s = (data && data.stats) || {};
+        document.getElementById('stat_windows').textContent = s.total_unknown_windows ?? 0;
+        document.getElementById('stat_tracks').textContent = s.unknown_tracks ?? 0;
+        document.getElementById('stat_tracks_today').textContent = s.unknown_tracks_today ?? 0;
+        document.getElementById('stat_activity').textContent = s.most_common_activity || '—';
+        const cams = s.cameras_with_unknowns;
+        document.getElementById('stat_cameras').textContent = Array.isArray(cams) ? cams.length : (s.camera_with_most_unknowns ? 1 : 0);
+    }
+
+    function renderDistribution(data) {
+        const dist = (data && data.activity_distribution) || [];
+        const ctx = document.getElementById('chart_distribution').getContext('2d');
+        if (chartDistribution) chartDistribution.destroy();
+        if (dist.length === 0) {
+            chartDistribution = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+            return;
+        }
+        chartDistribution = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: dist.map(d => d.label),
+                datasets: [{ data: dist.map(d => d.count), backgroundColor: ['#2563eb','#16a34a','#ea580c','#dc2626','#7c3aed','#0891b2','#ca8a04','#db2777'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    function renderTimeline(data) {
+        const tl = (data && data.timeline) || [];
+        const ctx = document.getElementById('chart_timeline').getContext('2d');
+        if (chartTimeline) chartTimeline.destroy();
+        if (tl.length === 0) {
+            chartTimeline = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+            return;
+        }
+        const labels = tl.map(d => {
+            const t = new Date(d.time);
+            return t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        });
+        chartTimeline = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{ label: 'Unknown windows', data: tl.map(d => d.count), backgroundColor: '#2563eb' }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
+    }
+
+    function fetchOverview() {
+        const url = '/v1/unknown-persons/overview?' + buildOverviewParams().toString();
+        fetch(url, { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(data) {
+                setError('');
+                renderStats(data);
+                renderDistribution(data);
+                renderTimeline(data);
+            })
+            .catch(function(err) { setError(err.message || 'Overview failed'); });
+    }
+
+    function escapeAttr(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function confClass(c) {
+        if (c == null) return '';
+        if (c < 0.5) return 'conf-low';
+        if (c < 0.75) return 'conf-mid';
+        return 'conf-high';
+    }
+
+    function formatTime(iso) {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' });
+    }
+
+    function durationMs(tsStart, tsEnd) {
+        if (tsStart == null || tsEnd == null) return '—';
+        return ((tsEnd - tsStart) / 1000).toFixed(1) + 's';
+    }
+
+    function fillActivityFilter(labels) {
+        const sel = document.getElementById('filter_activity');
+        const cur = sel.value;
+        const list = Array.isArray(labels) ? labels : [];
+        sel.innerHTML = '<option value="">— All —</option>' + list.map(l => '<option value="' + escapeAttr(l) + '">' + escapeAttr(l) + '</option>').join('');
+        if (cur && list.indexOf(cur) !== -1) sel.value = cur;
+    }
+
+    function fetchFilterOptions() {
+        fetch('/v1/dashboard/filter-options', { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(data) {
+                const devSel = document.getElementById('filter_device');
+                const camSel = document.getElementById('filter_camera');
+                const curDev = devSel.value;
+                const curCam = camSel.value;
+                const devices = Array.isArray(data.devices) ? data.devices : [];
+                const cameras = Array.isArray(data.cameras) ? data.cameras : [];
+                devSel.innerHTML = '<option value="">— All —</option>' + devices.map(d => '<option value="' + escapeAttr(d) + '">' + escapeAttr(d) + '</option>').join('');
+                camSel.innerHTML = '<option value="">— All —</option>' + cameras.map(c => '<option value="' + escapeAttr(c) + '">' + escapeAttr(c) + '</option>').join('');
+                if (curDev && devices.indexOf(curDev) !== -1) devSel.value = curDev;
+                if (curCam && cameras.indexOf(curCam) !== -1) camSel.value = curCam;
+            })
+            .catch(function() {});
+    }
+
+    function loadModelLabels() {
+        const model = document.getElementById('model_key').value;
+        if (!model) { fillActivityFilter([]); return; }
+        fetch('/v1/models/' + encodeURIComponent(model), { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+            .then(function(data) { fillActivityFilter(data.labels || []); })
+            .catch(function() { fillActivityFilter([]); });
+    }
+
+    function copyId(id) {
+        if (!id) return;
+        navigator.clipboard && navigator.clipboard.writeText(id).then(function() { setError(''); });
+    }
+
+    function getSelectedWindowIds() {
+        const ids = [];
+        document.querySelectorAll('#tbody input[type="checkbox"]:checked').forEach(function(cb) {
+            const id = cb.closest('tr') && cb.closest('tr').dataset.windowId;
+            if (id) ids.push(id);
+        });
+        return ids;
+    }
+
+    function updateAssignButton() {
+        const ids = getSelectedWindowIds();
+        document.getElementById('assign_btn').disabled = ids.length === 0;
+        document.getElementById('create_person_btn').disabled = ids.length === 0;
+    }
+
+    function rowHtml(row) {
+        const pred = row.prediction || {};
+        const predConf = pred.pred_conf;
+        const faceConf = row.person_conf;
+        const faceHint = (faceConf != null && faceConf < 0.5) ? ' <span class="conf-low" title="Low confidence">(low)</span>' : '';
+        const viewUrl = '/windows?window_id=' + encodeURIComponent(row.id || '');
+        const dur = durationMs(row.ts_start_ms, row.ts_end_ms);
+        return '<tr data-window-id="' + escapeAttr(row.id) + '" class="data-row">' +
+            '<td><input type="checkbox" class="row-select"></td>' +
+            '<td>' + formatTime(row.created_at) + '</td>' +
+            '<td>' + escapeAttr(row.camera_id) + '</td>' +
+            '<td>' + (row.track_id != null ? row.track_id : '—') + '</td>' +
+            '<td>' + escapeAttr(pred.pred_label) + '</td>' +
+            '<td><span class="' + confClass(predConf) + '">' + (predConf != null ? predConf.toFixed(2) : '—') + '</span></td>' +
+            '<td><span class="' + confClass(faceConf) + '">' + (faceConf != null ? faceConf.toFixed(2) : '—') + '</span>' + faceHint + '</td>' +
+            '<td class="win-id">' + (row.id ? row.id.slice(0, 8) + '… <button type="button" class="btn btn-sm" data-copy-id="' + escapeAttr(row.id) + '">Copy</button>' : '—') + '</td>' +
+            '<td>' + dur + '</td>' +
+            '<td><a href="' + viewUrl + '" class="btn btn-sm">View</a></td>' +
+            '</tr>';
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('tbody');
+        const groupByTrack = document.getElementById('group_by_track') && document.getElementById('group_by_track').checked;
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" class="empty">No unknown windows in this period.</td></tr>';
+            updateAssignButton();
+            return;
+        }
+        if (!groupByTrack) {
+            tbody.innerHTML = rows.map(rowHtml).join('');
+        } else {
+            var key = function(r) { return (r.camera_id || '') + '|' + (r.track_id != null ? r.track_id : ''); };
+            var groups = {};
+            rows.forEach(function(r) {
+                var k = key(r);
+                if (!groups[k]) groups[k] = [];
+                groups[k].push(r);
+            });
+            var html = '';
+            Object.keys(groups).sort().forEach(function(k) {
+                var list = groups[k];
+                var first = list[0];
+                var cam = first.camera_id || '—';
+                var tr = first.track_id != null ? first.track_id : '—';
+                var groupId = 'g-' + k.replace(/\|/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+                html += '<tr class="track-group-header" data-group-id="' + groupId + '"><td><input type="checkbox" class="track-select-all" data-group-id="' + groupId + '" title="Select all in track"></td><td colspan="8">' +
+                    '<span class="toggler">▼</span> ' + escapeAttr(cam) + ' · Track ' + escapeAttr(tr) + ' (' + list.length + ' window' + (list.length !== 1 ? 's' : '') + ')</td><td></td></tr>';
+                list.forEach(function(r) {
+                    html += rowHtml(r).replace('class="data-row"', 'class="data-row track-group-row ' + groupId + '"');
+                });
+            });
+            tbody.innerHTML = html;
+            tbody.querySelectorAll('.track-group-header').forEach(function(tr) {
+                var gid = tr.dataset.groupId;
+                tr.addEventListener('click', function(e) {
+                    if (e.target.type === 'checkbox') return;
+                    var bodyRows = tbody.querySelectorAll('tr.track-group-row.' + gid);
+                    var collapsed = bodyRows.length && bodyRows[0].classList.contains('collapsed');
+                    bodyRows.forEach(function(r) { r.classList.toggle('collapsed', !collapsed); });
+                    var toggler = tr.querySelector('.toggler');
+                    if (toggler) toggler.textContent = collapsed ? '▼' : '▶';
+                });
+            });
+            tbody.querySelectorAll('.track-select-all').forEach(function(cb) {
+                cb.addEventListener('click', function(e) { e.stopPropagation(); });
+                cb.addEventListener('change', function() {
+                    var gid = cb.dataset.groupId;
+                    tbody.querySelectorAll('tr.track-group-row.' + gid + ' .row-select').forEach(function(c) { c.checked = cb.checked; });
+                    updateAssignButton();
+                });
+            });
+        }
+        tbody.querySelectorAll('.row-select').forEach(function(cb) {
+            cb.addEventListener('change', updateAssignButton);
+        });
+        tbody.querySelectorAll('button[data-copy-id]').forEach(function(btn) {
+            btn.addEventListener('click', function() { copyId(btn.dataset.copyId); });
+        });
+        document.getElementById('select_all').checked = false;
+        updateAssignButton();
+    }
+
+    function renderPaginationWindows() {
+        const el = document.getElementById('pagination_windows');
+        var html = '';
+        if (currentPage > 1) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (currentPage - 1) + '">Prev</button>';
+        }
+        var maxShow = Math.max(currentPage, 5);
+        for (var p = 1; p <= maxShow; p++) {
+            html += '<button type="button" class="btn btn-page' + (p === currentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+        }
+        if (hasMoreWindows) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (currentPage + 1) + '">Next</button>';
+        }
+        el.innerHTML = html || '<span style="color:var(--muted);">Page ' + currentPage + '</span>';
+        el.querySelectorAll('.btn-page').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var p = parseInt(btn.dataset.page, 10);
+                if (p >= 1) { currentPage = p; fetchWindows(); }
+            });
+        });
+    }
+
+    function renderPaginationAlerts() {
+        const el = document.getElementById('pagination_alerts');
+        var html = '';
+        if (alertCurrentPage > 1) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (alertCurrentPage - 1) + '">Prev</button>';
+        }
+        var maxShow = Math.max(alertCurrentPage, 5);
+        for (var p = 1; p <= maxShow; p++) {
+            html += '<button type="button" class="btn btn-page' + (p === alertCurrentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+        }
+        if (alertHasMore) {
+            html += '<button type="button" class="btn btn-page" data-page="' + (alertCurrentPage + 1) + '">Next</button>';
+        }
+        el.innerHTML = html || '<span style="color:var(--muted);">Page ' + alertCurrentPage + '</span>';
+        el.querySelectorAll('.btn-page').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var p = parseInt(btn.dataset.page, 10);
+                if (p >= 1) { alertCurrentPage = p; fetchAlerts(); }
+            });
+        });
+    }
+
+    function fetchWindows() {
+        document.getElementById('tbody').innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
+        const params = buildWindowsParams();
+        fetch('/v1/dashboard/windows?' + params.toString(), { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(resp) {
+                const rows = (resp && resp.data) ? resp.data : [];
+                hasMoreWindows = !!(resp && resp.has_more);
+                renderTable(rows);
+                renderPaginationWindows();
+            })
+            .catch(function(err) {
+                document.getElementById('tbody').innerHTML = '<tr><td colspan="10" class="empty">Error: ' + escapeAttr(err.message) + '</td></tr>';
+                setError(err.message || 'Failed to load windows');
+            });
+    }
+
+    function fetchAlerts() {
+        document.getElementById('tbody_alerts').innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+        const params = buildAlertsParams();
+        fetch('/v1/dashboard/windows?' + params.toString(), { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(resp) {
+                const rows = (resp && resp.data) ? resp.data : [];
+                alertHasMore = !!(resp && resp.has_more);
+                renderAlertsTable(rows);
+                renderPaginationAlerts();
+            })
+            .catch(function() {
+                document.getElementById('tbody_alerts').innerHTML = '<tr><td colspan="5" class="empty">Error loading alerts.</td></tr>';
+            });
+    }
+
+    function renderAlertsTable(rows) {
+        const tbody = document.getElementById('tbody_alerts');
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty">No unknown person alerts in this period.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(function(row) {
+            const pred = row.prediction || {};
+            const viewUrl = '/windows?window_id=' + encodeURIComponent(row.id || '');
+            return '<tr><td>' + formatTime(row.created_at) + '</td><td>' + escapeAttr(row.camera_id) + '</td><td>' + escapeAttr(pred.pred_label) + '</td><td>' + (pred.pred_conf != null ? (pred.pred_conf * 100).toFixed(0) + '%' : '—') + '</td><td><a href="' + viewUrl + '" class="btn btn-sm">View</a></td></tr>';
+        }).join('');
+    }
+
+    function refreshAll() {
+        fetchOverview();
+        fetchWindows();
+        fetchAlerts();
+    }
+
+    function assignToPerson(personId) {
+        const ids = getSelectedWindowIds();
+        if (!personId || ids.length === 0) return;
+        setError('');
+        let done = 0;
+        function next() {
+            if (done >= ids.length) {
+                document.getElementById('assign_modal').classList.remove('show');
+                refreshAll();
+                return;
+            }
+            fetch('/v1/windows/' + encodeURIComponent(ids[done]) + '/person', {
+                method: 'POST',
+                headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ person_id: personId })
+            })
+                .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                .then(function() { done++; next(); })
+                .catch(function(err) {
+                    setError('Assign failed: ' + (err.message || ''));
+                    document.getElementById('assign_modal').classList.remove('show');
+                });
+        }
+        next();
+    }
+
+    function openAssignModal() {
+        const ids = getSelectedWindowIds();
+        if (ids.length === 0) return;
+        fetch('/v1/persons', { headers: { 'X-API-Key': API_KEY } })
+            .then(function(r) { return r.ok ? r.json() : { persons: [] }; })
+            .then(function(data) {
+                const sel = document.getElementById('assign_person_select');
+                const list = data.persons || [];
+                sel.innerHTML = '<option value="">— Select —</option>' + list.map(function(p) { return '<option value="' + escapeAttr(p.id) + '">' + escapeAttr(p.name || p.id) + '</option>'; }).join('');
+                document.getElementById('assign_modal').classList.add('show');
+            })
+            .catch(function() { setError('Could not load persons'); });
+    }
+
+    document.getElementById('select_all').addEventListener('change', function() {
+        document.querySelectorAll('#tbody .row-select').forEach(function(cb) { cb.checked = document.getElementById('select_all').checked; });
+        updateAssignButton();
+    });
+    function applyFilters() {
+        currentPage = 1;
+        alertCurrentPage = 1;
+        refreshAll();
+    }
+    document.getElementById('time_range').addEventListener('change', applyFilters);
+    document.getElementById('model_key').addEventListener('change', function() { loadModelLabels(); applyFilters(); });
+    document.getElementById('filter_device').addEventListener('change', applyFilters);
+    document.getElementById('filter_camera').addEventListener('change', applyFilters);
+    document.getElementById('filter_activity').addEventListener('change', applyFilters);
+    document.getElementById('max_pred_conf').addEventListener('change', applyFilters);
+    document.getElementById('max_face_conf').addEventListener('change', applyFilters);
+    document.getElementById('filter_only_alerts').addEventListener('change', applyFilters);
+    document.getElementById('group_by_track').addEventListener('change', refreshAll);
+    document.getElementById('refresh_btn').addEventListener('click', refreshAll);
+    document.getElementById('assign_btn').addEventListener('click', openAssignModal);
+    document.getElementById('assign_modal_close').addEventListener('click', function() { document.getElementById('assign_modal').classList.remove('show'); });
+    document.getElementById('assign_confirm').addEventListener('click', function() {
+        var pid = document.getElementById('assign_person_select').value;
+        if (pid) assignToPerson(pid);
+    });
+
+    function openCreatePersonModal() {
+        var ids = getSelectedWindowIds();
+        if (ids.length === 0) return;
+        document.getElementById('create_person_hint').textContent = 'Create a new person and link the selected ' + ids.length + ' window(s) to them. You can optionally upload a face image.';
+        document.getElementById('create_person_name').value = '';
+        document.getElementById('create_person_face').value = '';
+        document.getElementById('create_person_status').textContent = '';
+        document.getElementById('create_person_modal').classList.add('show');
+    }
+
+    function createPersonFromWindow() {
+        var name = (document.getElementById('create_person_name').value || '').trim();
+        if (!name) {
+            document.getElementById('create_person_status').textContent = 'Please enter a name.';
+            document.getElementById('create_person_status').className = 'meta error';
+            return;
+        }
+        var ids = getSelectedWindowIds();
+        if (ids.length === 0) {
+            document.getElementById('create_person_modal').classList.remove('show');
+            return;
+        }
+        var statusEl = document.getElementById('create_person_status');
+        statusEl.textContent = 'Creating person…';
+        statusEl.className = 'meta';
+        fetch('/v1/persons', {
+            method: 'POST',
+            headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, is_active: true })
+        })
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(person) {
+                var personId = person.id;
+                statusEl.textContent = 'Person created. Uploading face…';
+                var fileInput = document.getElementById('create_person_face');
+                var file = fileInput && fileInput.files && fileInput.files[0];
+                if (file) {
+                    var fd = new FormData();
+                    fd.append('files', file);
+                    return fetch('/v1/persons/' + personId + '/faces', {
+                        method: 'POST',
+                        headers: { 'X-API-Key': API_KEY },
+                        body: fd
+                    }).then(function(r) { if (!r.ok) throw new Error(r.status); return personId; });
+                }
+                return personId;
+            })
+            .then(function(personId) {
+                statusEl.textContent = 'Linking ' + ids.length + ' window(s)…';
+                var done = 0;
+                function next() {
+                    if (done >= ids.length) {
+                        document.getElementById('create_person_modal').classList.remove('show');
+                        setError('');
+                        refreshAll();
+                        return;
+                    }
+                    fetch('/v1/windows/' + encodeURIComponent(ids[done]) + '/person', {
+                        method: 'POST',
+                        headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ person_id: personId })
+                    })
+                        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                        .then(function() { done++; next(); })
+                        .catch(function(err) {
+                            statusEl.textContent = 'Failed: ' + (err.message || '');
+                            statusEl.className = 'meta error';
+                        });
+                }
+                next();
+            })
+            .catch(function(err) {
+                statusEl.textContent = 'Failed: ' + (err.message || '');
+                statusEl.className = 'meta error';
+            });
+    }
+
+    document.getElementById('create_person_btn').addEventListener('click', openCreatePersonModal);
+    document.getElementById('create_person_modal_close').addEventListener('click', function() { document.getElementById('create_person_modal').classList.remove('show'); });
+    document.getElementById('create_person_confirm').addEventListener('click', createPersonFromWindow);
+
+    loadModelLabels();
+    fetchFilterOptions();
+    refreshAll();
+    if (document.getElementById('auto_refresh').checked) {
+        refreshTimer = setInterval(function() {
+            if (document.visibilityState === 'hidden') return;
+            refreshAll();
+        }, REFRESH_INTERVAL_MS);
+    }
+    document.getElementById('auto_refresh').addEventListener('change', function() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = null;
+        if (document.getElementById('auto_refresh').checked) {
+            refreshTimer = setInterval(function() { if (document.visibilityState !== 'hidden') refreshAll(); }, REFRESH_INTERVAL_MS);
+        }
+    });
+})();
+    </script>
+</body>
+</html>

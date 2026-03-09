@@ -35,13 +35,17 @@ from app.services import (
     get_dashboard_overview,
     get_dashboard_windows,
     get_dashboard_filter_options,
+    get_unknown_persons_overview,
     get_window_by_id,
     get_windows,
     get_recent_windows_with_predictions,
     run_predict_for_window,
     set_window_person,
     update_window_label,
+    get_alerts,
+    set_alert_status,
 )
+from app.system import get_system_status
 from app.utils import isoformat_utc
 
 app = FastAPI(title="Cloud HAR API", version="1.0.0")
@@ -216,8 +220,16 @@ async def dashboard_windows(
     only_unlabeled: bool = Query(False),
     only_labeled: bool = Query(False),
     only_mismatches: bool = Query(False),
+    only_unknown_person: bool = Query(False),
+    since: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    until: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    min_face_conf: Optional[float] = Query(None, ge=0, le=1, description="Min face/person confidence"),
+    max_face_conf: Optional[float] = Query(None, ge=0, le=1, description="Max face/person confidence"),
+    only_alerts: bool = Query(False),
 ):
     """List windows for dashboard with optional filters; returns {data, has_more} for pagination."""
+    since_dt = _parse_optional_datetime(since)
+    until_dt = _parse_optional_datetime(until)
     result = get_dashboard_windows(
         db,
         model_key=model_key,
@@ -233,6 +245,12 @@ async def dashboard_windows(
         only_unlabeled=only_unlabeled,
         only_labeled=only_labeled,
         only_mismatches=only_mismatches,
+        only_unknown_person=only_unknown_person,
+        since=since_dt,
+        until=until_dt,
+        min_person_conf=min_face_conf,
+        max_person_conf=max_face_conf,
+        only_alerts=only_alerts,
     )
     return result
 
@@ -282,6 +300,60 @@ async def dashboard_overview(
         only_known_person=only_known_person,
     )
     return overview
+
+
+@app.get("/v1/unknown-persons/overview")
+async def unknown_persons_overview(
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+    since: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    until: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    model_key: Optional[str] = None,
+):
+    """Unknown persons page: stats, timeline, activity distribution for windows with person_id IS NULL."""
+    since_dt = _parse_optional_datetime(since)
+    until_dt = _parse_optional_datetime(until)
+    return get_unknown_persons_overview(db, since=since_dt, until=until_dt, model_key=model_key)
+
+
+@app.get("/v1/alerts")
+async def list_alerts(
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+    model_key: Optional[str] = None,
+    since: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    until: Optional[str] = Query(None, description="ISO datetime (inclusive)"),
+    limit: int = Query(100, ge=1, le=500),
+    status: Optional[str] = Query(None, description="Filter by status: new, acknowledged, resolved"),
+):
+    """List alert events (windows with prediction in ALERT_ACTIVITIES)."""
+    since_dt = _parse_optional_datetime(since)
+    until_dt = _parse_optional_datetime(until)
+    return {"alerts": get_alerts(db, model_key=model_key, since=since_dt, until=until_dt, limit=limit, status_filter=status)}
+
+
+@app.post("/v1/alerts/{window_id}/status")
+async def update_alert_status(
+    window_id: UUID,
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+    db: Session = Depends(get_db),
+):
+    """Set alert status for a window: acknowledged or resolved."""
+    body = await request.json() if await request.body() else {}
+    status = (body.get("status") or "").strip().lower()
+    if status not in ("acknowledged", "resolved"):
+        raise HTTPException(status_code=400, detail="status must be 'acknowledged' or 'resolved'")
+    row = set_alert_status(db, window_id, status)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Window not found")
+    return {"window_id": str(window_id), "status": row.status}
+
+
+@app.get("/v1/system/status")
+async def system_status(api_key: str = Depends(verify_api_key), db: Session = Depends(get_db)):
+    """System status for Models/System page: current activity model, face gallery, edge status, health."""
+    return get_system_status(db)
 
 
 @app.get("/v1/dashboard/filter-options")
@@ -507,4 +579,43 @@ async def person_detail_page(request: Request, person_id: str):
         "request": request,
         "api_key": API_KEY,
         "person_id": person_id,
+    })
+
+
+@app.get("/unknown-persons", response_class=HTMLResponse)
+async def unknown_persons_page(request: Request, model_key: Optional[str] = None):
+    """Unknown persons page: stats, charts, table, assign to person."""
+    key = model_key or MODEL_KEY_DEFAULT
+    models = list_models()
+    if key and key not in models:
+        key = models[0] if models else None
+    return templates.TemplateResponse("unknown_persons.html", {
+        "request": request,
+        "api_key": API_KEY,
+        "model_key": key,
+        "models": models,
+    })
+
+
+@app.get("/alerts", response_class=HTMLResponse)
+async def alerts_page(request: Request, model_key: Optional[str] = None):
+    """Alerts / Critical Events page."""
+    key = model_key or MODEL_KEY_DEFAULT
+    models = list_models()
+    if key and key not in models:
+        key = models[0] if models else None
+    return templates.TemplateResponse("alerts.html", {
+        "request": request,
+        "api_key": API_KEY,
+        "model_key": key,
+        "models": models,
+    })
+
+
+@app.get("/system", response_class=HTMLResponse)
+async def system_page(request: Request):
+    """Models / System status page."""
+    return templates.TemplateResponse("system.html", {
+        "request": request,
+        "api_key": API_KEY,
     })

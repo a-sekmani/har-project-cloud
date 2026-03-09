@@ -22,6 +22,9 @@ curl -H "X-API-Key: dev-key" http://localhost:8000/v1/windows
 - [Windows API](#windows-api)
 - [Activity Inference API](#activity-inference-api)
 - [Dashboard API](#dashboard-api)
+- [Unknown Persons API](#unknown-persons-api)
+- [Alerts API](#alerts-api)
+- [System API](#system-api)
 - [Error Responses](#error-responses)
 
 ---
@@ -454,6 +457,46 @@ curl -s "http://localhost:8000/v1/windows/807dbb7e-61a4-4353-98ab-86da002cb291" 
 
 ---
 
+### POST /v1/windows/{window_id}/person
+
+Assign or clear the identified person for a window. Used by the Unknown Persons page and person assignment flows.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| window_id | UUID | Window identifier |
+
+**Headers:**
+| Header | Required | Description |
+|--------|----------|-------------|
+| X-API-Key | Yes | API key for authentication |
+| Content-Type | Yes | `application/json` |
+
+**Request Body:**
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+Send `person_id: null` to clear the person (set window to unknown).
+
+**Response:**
+```json
+{
+  "id": "807dbb7e-61a4-4353-98ab-86da002cb291",
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "person_name": "Ahmad"
+}
+```
+
+**Status Codes:**
+- `200 OK` - Success
+- `400 Bad Request` - Invalid body
+- `401 Unauthorized` - Missing or invalid API key
+- `404 Not Found` - Window or person not found
+
+---
+
 ### POST /v1/windows/{window_id}/label
 
 Set or update the label for a pose window.
@@ -825,12 +868,19 @@ Get windows with predictions for the dashboard. Supports filtering and paginatio
 | device_id | string | - | Filter by device |
 | camera_id | string | - | Filter by camera |
 | track_id | integer | - | Filter by track ID |
+| person_id | UUID | - | Filter by person |
 | only_with_predictions | boolean | false | Only show windows with predictions |
 | pred_label | string | - | Filter by predicted label |
 | max_pred_conf | float | - | Only show predictions below this confidence |
 | only_unlabeled | boolean | false | Only show unlabeled windows |
 | only_labeled | boolean | false | Only show labeled windows |
 | only_mismatches | boolean | false | Only show label/prediction mismatches |
+| only_unknown_person | boolean | false | Only windows with no identified person (person_id IS NULL) |
+| since | string | - | ISO datetime (inclusive) – start of time range |
+| until | string | - | ISO datetime (inclusive) – end of time range |
+| min_face_conf | float | - | Min face/person confidence (0–1) |
+| max_face_conf | float | - | Max face/person confidence (0–1) |
+| only_alerts | boolean | false | Only windows whose prediction is in alert activities (e.g. falling_down, chest_pain) |
 
 **Response:** Object with `data` (array of windows) and `has_more` (boolean; true if more pages exist).
 ```json
@@ -954,6 +1004,134 @@ Dashboard overview: aggregated stats, activity distribution, timeline, person pr
 curl -s "http://localhost:8000/v1/dashboard/overview?since=2026-03-04T10:00:00Z&until=2026-03-04T12:00:00Z&model_key=edge17_v6_lowlr" \
   -H "X-API-Key: dev-key"
 ```
+
+---
+
+### GET /v1/dashboard/filter-options
+
+Distinct devices and cameras for dashboard filter dropdowns (e.g. Overview, Recent Windows, Unknown Persons, Label Windows).
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| since | string | ISO datetime (inclusive) – optional |
+| until | string | ISO datetime (inclusive) – optional |
+
+**Response:**
+```json
+{
+  "devices": ["pi-001", "projecthost"],
+  "cameras": ["cam-1", "default"]
+}
+```
+
+---
+
+## Unknown Persons API
+
+### GET /v1/unknown-persons/overview
+
+Overview for the Unknown Persons page: stats, timeline, and activity distribution for windows with no identified person (`person_id IS NULL`).
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| since | string | ISO datetime (inclusive) – start of time range |
+| until | string | ISO datetime (inclusive) – end of time range |
+| model_key | string | Model for predictions (optional; default from config) |
+
+**Response:**
+```json
+{
+  "stats": {
+    "total_unknown_windows": 42,
+    "unknown_tracks": 8,
+    "unknown_tracks_today": 2,
+    "most_common_activity": "standing",
+    "cameras_with_unknowns": ["cam-1", "default"],
+    "camera_with_most_unknowns": "cam-1"
+  },
+  "activity_distribution": [
+    { "label": "standing", "count": 20 },
+    { "label": "walking", "count": 12 }
+  ],
+  "timeline": [
+    { "time": "2026-03-04T11:00:00.000000", "count": 10 },
+    { "time": "2026-03-04T12:00:00.000000", "count": 15 }
+  ]
+}
+```
+
+---
+
+## Alerts API
+
+### GET /v1/alerts
+
+List alert events: windows whose prediction is in the alert activities set (e.g. falling_down, chest_pain, nausea_vomiting, headache, back_pain). Used by the Alerts / Critical Events page.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| model_key | string | - | Model for predictions |
+| since | string | - | ISO datetime (inclusive) |
+| until | string | - | ISO datetime (inclusive) |
+| limit | integer | 100 | Maximum results (1-500) |
+| status | string | - | Filter by status: `new`, `acknowledged`, `resolved` |
+
+**Response:**
+```json
+{
+  "alerts": [
+    {
+      "window_id": "807dbb7e-61a4-4353-98ab-86da002cb291",
+      "time": "2026-03-04T12:00:00.000000",
+      "person": "Ahmad",
+      "event": "falling_down",
+      "confidence": 0.88,
+      "camera": "cam-1",
+      "status": "new"
+    }
+  ]
+}
+```
+
+---
+
+### POST /v1/alerts/{window_id}/status
+
+Set alert status for a window: acknowledged or resolved.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| window_id | UUID | Window identifier |
+
+**Request Body:**
+```json
+{
+  "status": "acknowledged"
+}
+```
+`status` must be `acknowledged` or `resolved`.
+
+**Response:**
+```json
+{
+  "window_id": "807dbb7e-61a4-4353-98ab-86da002cb291",
+  "status": "acknowledged"
+}
+```
+
+---
+
+## System API
+
+### GET /v1/system/status
+
+System status for the Models / System page: current activity model, face gallery version, edge status, health.
+
+**Response:** Object with fields such as `model_key`, `gallery_version`, `edge_status`, `health` (and any other status the backend returns).
 
 ---
 

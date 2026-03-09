@@ -1,7 +1,8 @@
 """Lightweight model metadata: list models and get labels from label_map.json (no ONNX load)."""
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 import json
+from datetime import datetime, timezone
 
 from app.config import MODELS_DIR
 
@@ -42,3 +43,29 @@ def get_labels_and_version(model_key: str) -> tuple[list[str], Optional[str]]:
             meta = json.load(f)
         version = meta.get("model_version") or meta.get("training_dataset")
     return labels, version
+
+
+def get_model_meta_extra(model_key: str) -> dict[str, Any]:
+    """
+    Read model_meta.json for model_key. Returns dict with input_shape, feature_spec,
+    version, date_loaded (ISO string of file mtime). Missing keys are omitted.
+    """
+    base = _base()
+    model_dir = base / model_key
+    out: dict[str, Any] = {}
+    meta_path = model_dir / "model_meta.json"
+    if not meta_path.is_file():
+        return out
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        if "input_shape" in meta:
+            out["input_shape"] = meta["input_shape"]
+        if "feature_spec" in meta:
+            out["feature_spec"] = meta["feature_spec"]
+        out["version"] = meta.get("model_version") or meta.get("training_dataset")
+        mtime = meta_path.stat().st_mtime
+        out["date_loaded"] = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+    except (OSError, json.JSONDecodeError):
+        pass
+    return out

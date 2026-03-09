@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.constants import ALERT_ACTIVITIES
-from app.models import PoseWindow, WindowPrediction, Person, PersonFace
+from app.models import PoseWindow, WindowPrediction, Person, PersonFace, AlertStatus
 from app.schemas import IngestWindowBody
 from app.utils import isoformat_utc
 
@@ -100,6 +100,12 @@ def get_dashboard_windows(
     only_unlabeled: bool = False,
     only_labeled: bool = False,
     only_mismatches: bool = False,
+    only_unknown_person: bool = False,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    min_person_conf: float | None = None,
+    max_person_conf: float | None = None,
+    only_alerts: bool = False,
 ) -> dict:
     """Windows for dashboard with optional filters; each row has latest prediction per model_key. Returns {data, has_more}."""
     from app.models_meta import get_labels_and_version
@@ -113,6 +119,16 @@ def get_dashboard_windows(
         query = query.filter(PoseWindow.track_id == track_id)
     if person_id is not None:
         query = query.filter(PoseWindow.person_id == person_id)
+    if only_unknown_person:
+        query = query.filter(PoseWindow.person_id.is_(None))
+    if since is not None:
+        query = query.filter(PoseWindow.created_at >= since)
+    if until is not None:
+        query = query.filter(PoseWindow.created_at <= until)
+    if min_person_conf is not None:
+        query = query.filter(PoseWindow.person_conf >= min_person_conf)
+    if max_person_conf is not None:
+        query = query.filter(PoseWindow.person_conf <= max_person_conf)
     fetch_limit = limit * 4 if (
         only_with_predictions or pred_label is not None or max_pred_conf is not None
         or only_unlabeled or only_labeled or only_mismatches
@@ -189,6 +205,8 @@ def get_dashboard_windows(
             pred_l = (row["prediction"] or {}).get("pred_label")
             if not label_val or not pred_l or label_val == pred_l:
                 continue
+        if only_alerts and (row["prediction"] is None or row["prediction"].get("pred_label") not in ALERT_ACTIVITIES):
+            continue
         out.append(row)
         if len(out) >= limit:
             break
@@ -465,6 +483,119 @@ def get_dashboard_overview(
     }
 
 
+def get_unknown_persons_overview(
+    db: Session,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    model_key: str | None = None,
+    max_windows: int = 5000,
+) -> dict:
+    """
+    Overview for Unknown Persons page: stats, timeline, activity distribution.
+    Only windows with person_id IS NULL. model_key used for latest prediction per window.
+    """
+    from app.config import MODEL_KEY_DEFAULT
+    key = model_key or MODEL_KEY_DEFAULT
+
+    query = (
+        db.query(PoseWindow)
+        .filter(PoseWindow.person_id.is_(None))
+        .order_by(desc(PoseWindow.created_at))
+    )
+    if since is not None:
+        query = query.filter(PoseWindow.created_at >= since)
+    if until is not None:
+        query = query.filter(PoseWindow.created_at <= until)
+    windows = query.limit(max_windows).all()
+
+    latest_pred_by_window: dict[UUID, WindowPrediction] = {}
+    if key and windows:
+        window_ids = [w.id for w in windows]
+        preds = (
+            db.query(WindowPrediction)
+            .filter(
+                WindowPrediction.model_key == key,
+                WindowPrediction.window_id.in_(window_ids),
+            )
+            .order_by(desc(WindowPrediction.created_at))
+            .all()
+        )
+        for p in preds:
+            if p.window_id not in latest_pred_by_window:
+                latest_pred_by_window[p.window_id] = p
+
+    rows: list[tuple[PoseWindow, WindowPrediction | None]] = []
+    for w in windows:
+        pred = latest_pred_by_window.get(w.id) if key else None
+        if key and pred is None:
+            continue
+        rows.append((w, pred))
+
+    total_unknown_windows = len(rows)
+    track_keys = set((w.camera_id or "", w.track_id) for w, _ in rows)
+    unknown_tracks = len(track_keys)
+
+    start_today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows_today = []
+    for w, p in rows:
+        t = w.created_at
+        if t is None:
+            continue
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=UTC)
+        if t >= start_today:
+            rows_today.append((w, p))
+    track_keys_today = set((w.camera_id or "", w.track_id) for w, _ in rows_today)
+    unknown_tracks_today = len(track_keys_today)
+
+    activity_counter: Counter[str] = Counter()
+    for _, p in rows:
+        if p is not None:
+            activity_counter[p.pred_label] += 1
+    most_common_activity = activity_counter.most_common(1)[0][0] if activity_counter else None
+    activity_distribution = [{"label": label, "count": count} for label, count in activity_counter.most_common()]
+
+    camera_counts: Counter[str] = Counter()
+    for w, _ in rows:
+        cam = w.camera_id or ""
+        if cam:
+            camera_counts[cam] += 1
+    cameras_with_unknowns = sorted(camera_counts.keys())
+    camera_with_most_unknowns = camera_counts.most_common(1)[0][0] if camera_counts else None
+
+    timeline: list[dict] = []
+    if rows and since is not None and until is not None:
+        range_seconds = (until - since).total_seconds()
+        bucket_by_day = range_seconds > 86400
+        buckets: dict[datetime, int] = {}
+        for w, _ in rows:
+            t = w.created_at
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=UTC)
+            if bucket_by_day:
+                bucket_ts = t.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                bucket_ts = t.replace(minute=0, second=0, microsecond=0)
+            buckets[bucket_ts] = buckets.get(bucket_ts, 0) + 1
+        for bucket_ts in sorted(buckets.keys()):
+            timeline.append({"time": isoformat_utc(bucket_ts), "count": buckets[bucket_ts]})
+
+    stats = {
+        "total_unknown_windows": total_unknown_windows,
+        "unknown_tracks": unknown_tracks,
+        "unknown_tracks_today": unknown_tracks_today,
+        "most_common_activity": most_common_activity,
+        "cameras_with_unknowns": cameras_with_unknowns,
+        "camera_with_most_unknowns": camera_with_most_unknowns,
+    }
+    return {
+        "stats": stats,
+        "activity_distribution": activity_distribution,
+        "timeline": timeline,
+    }
+
+
 def get_dashboard_filter_options(
     db: Session,
     *,
@@ -484,6 +615,91 @@ def get_dashboard_filter_options(
     devices = sorted({r[0] for r in dev_rows if r[0]})
     cameras = sorted({r[0] for r in cam_rows if r[0]})
     return {"devices": devices, "cameras": cameras}
+
+
+def get_alerts(
+    db: Session,
+    *,
+    model_key: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    limit: int = 100,
+    status_filter: str | None = None,
+) -> list[dict]:
+    """
+    Return alert events: windows with prediction in ALERT_ACTIVITIES.
+    Each item: time, person, event, confidence, camera, status (new/acknowledged/resolved), window_id.
+    """
+    from app.config import MODEL_KEY_DEFAULT
+    key = model_key or MODEL_KEY_DEFAULT
+    preds = (
+        db.query(WindowPrediction)
+        .filter(
+            WindowPrediction.model_key == key,
+            WindowPrediction.pred_label.in_(list(ALERT_ACTIVITIES)),
+        )
+        .order_by(desc(WindowPrediction.created_at))
+        .limit(limit * 3)
+        .all()
+    )
+    if not preds:
+        return []
+    seen_w: set[UUID] = set()
+    preds_by_window: list[WindowPrediction] = []
+    for p in preds:
+        if p.window_id in seen_w:
+            continue
+        seen_w.add(p.window_id)
+        preds_by_window.append(p)
+        if len(preds_by_window) >= limit:
+            break
+    window_ids = [p.window_id for p in preds_by_window]
+    windows = {w.id: w for w in db.query(PoseWindow).filter(PoseWindow.id.in_(window_ids)).all()}
+    status_map: dict[UUID, str] = {}
+    for row in db.query(AlertStatus).filter(AlertStatus.window_id.in_(window_ids)).all():
+        status_map[row.window_id] = row.status
+    out = []
+    for p in preds_by_window:
+        w = windows.get(p.window_id)
+        if w is None:
+            continue
+        if since is not None and w.created_at < since:
+            continue
+        if until is not None and w.created_at > until:
+            continue
+        st = status_map.get(w.id, "new")
+        if status_filter is not None and st != status_filter:
+            continue
+        out.append({
+            "window_id": str(w.id),
+            "time": isoformat_utc(w.created_at),
+            "person": (w.person_name or "Unknown").strip() or "Unknown",
+            "event": p.pred_label,
+            "confidence": p.pred_conf,
+            "camera": w.camera_id or "—",
+            "status": st,
+        })
+    return out
+
+
+def set_alert_status(db: Session, window_id: UUID, status: str) -> AlertStatus | None:
+    """Set status for an alert (window). status: new, acknowledged, resolved."""
+    w = get_window_by_id(db, window_id)
+    if w is None:
+        return None
+    if status not in ("new", "acknowledged", "resolved"):
+        return None
+    row = db.query(AlertStatus).filter(AlertStatus.window_id == window_id).first()
+    now = datetime.now(UTC)
+    if row is None:
+        row = AlertStatus(window_id=window_id, status=status, updated_at=now)
+        db.add(row)
+    else:
+        row.status = status
+        row.updated_at = now
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def get_person_window_stats(
