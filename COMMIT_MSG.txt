@@ -1,0 +1,17 @@
+Apply Untitled UI, left sidebar navigation with icons, and UI cleanups
+
+Untitled UI styling
+- Add app/static/css/untitled-ui.css: Inter font, design tokens (gray, primary, error, success, warning), semantic vars (--bg, --card, --border, --text, --accent), shared component styles (header, nav, filters, stats, cards, tables, buttons, modals, pagination, form groups, badges, health items, etc.)
+- Mount /static in app/main.py (StaticFiles from app/static) so all pages load the shared stylesheet
+- Replace inline <style> blocks in all templates with <link rel="stylesheet" href="/static/css/untitled-ui.css">; move page-specific classes (row-error, stats, badges, sys-row, health-grid, face-card, upload-area, tabs, grid-2, etc.) into untitled-ui.css
+
+Left sidebar navigation
+- Add .app-layout, .sidebar (240px left), .main-content in untitled-ui.css; sidebar shows logo + vertical nav with icons
+- Add nav icons (SVG data URIs) per section: Overview (grid), Recent Windows (layout), Person Management (users), Unknown Persons (user), Alerts (bell), Models/System (cog); active state uses primary color
+- Update all 9 templates (dashboard, windows, alerts, persons, unknown_persons, label, system, device_dashboard, person_detail): wrap body content in .app-layout > .sidebar + .main-content > .container; replace top horizontal header with sidebar nav; set .active on current page link
+
+UI cleanups
+- Overview: remove "Last updated" line (span#last_updated and setLastUpdated); keep last_error for errors
+- Person Management: remove "Last updated" line (span#last_updated and JS update); keep message_area for messages
+
+Files changed: app/main.py (static mount), app/static/css/untitled-ui.css (new), all app/templates/*.html (sidebar + Untitled UI, remove Last updated where applicable).

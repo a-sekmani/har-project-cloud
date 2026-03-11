@@ -4,56 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alerts / Critical Events</title>
-    <style>
-        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --red: #dc2626; --orange: #ea580c; }
-        * { box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
-        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; color: var(--text); }
-        a { color: var(--accent); text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
-        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); }
-        .site-logo:hover { text-decoration: none; color: var(--accent); }
-        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
-        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; }
-        .site-nav a:hover { background: var(--border); text-decoration: none; }
-        .site-nav a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-        .header { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
-        .header .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
-        .header label { margin-right: 6px; color: var(--muted); font-size: 0.875rem; }
-        .header select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); min-width: 100px; font-size: 0.875rem; }
-        .btn { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.875rem; }
-        .btn:hover { background: var(--border); }
-        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-        .btn-sm { padding: 4px 10px; font-size: 0.8rem; margin: 0 2px; }
-        .btn-sm.ack { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
-        .btn-sm.res { background: #dcfce7; color: #166534; border-color: #86efac; }
-        table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
-        th { background: var(--border); font-weight: 600; font-size: 0.8rem; }
-        tr:hover { background: #f1f5f9; }
-        .status-new { color: var(--red); font-weight: 500; }
-        .status-acknowledged { color: var(--orange); }
-        .status-resolved { color: var(--green); }
-        .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 12px; }
-        .meta .error { color: var(--red); }
-        .empty { text-align: center; padding: 40px; color: var(--muted); }
-    </style>
+    <link rel="stylesheet" href="/static/css/untitled-ui.css">
 </head>
 <body>
-    <div class="container">
-        <header class="site-header">
+    <div class="app-layout">
+        <aside class="sidebar">
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
-                <a href="/dashboard">Overview</a>
-                <a href="/windows">Recent Windows</a>
-                <a href="/persons">Person Management</a>
-                <a href="/unknown-persons">Unknown Persons</a>
-                <a href="/alerts" class="active">Alerts / Critical Events</a>
-                <a href="/system">Models / System</a>
+                <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
+                <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
+                <a href="/alerts" class="active"><span class="nav-icon icon-alerts"></span>Alerts</a>
+                <a href="/system"><span class="nav-icon icon-system"></span>Models / System</a>
             </nav>
-        </header>
+        </aside>
+        <main class="main-content">
+            <div class="container">
         <h1>Alerts / Critical Events</h1>
         <div class="header">
             <div class="filter-row">
@@ -104,6 +71,8 @@
                 <tr><td colspan="7" class="empty">Loading…</td></tr>
             </tbody>
         </table>
+            </div>
+        </main>
     </div>
     <script>
 (function() {

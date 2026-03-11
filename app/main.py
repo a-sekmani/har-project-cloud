@@ -55,6 +55,10 @@ templates = Jinja2Templates(directory="app/templates")
 FACE_IMAGES_DIR = Path("data/person_faces")
 FACE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/face-images", StaticFiles(directory=str(FACE_IMAGES_DIR)), name="face-images")
+# Static assets (CSS, etc.) - Untitled UI
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Include routers
 app.include_router(health_router)

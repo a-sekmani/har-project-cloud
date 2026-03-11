@@ -4,33 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Device Dashboard - {{ device_id }}</title>
-    <style>
-        :root { --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --accent: #2563eb; --green: #16a34a; --orange: #ea580c; --red: #dc2626; }
-        * { box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
-        .site-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
-        .site-logo { font-weight: 700; font-size: 1.25rem; color: var(--text); text-decoration: none; }
-        .site-logo:hover { color: var(--accent); }
-        .site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
-        .site-nav a { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 0.875rem; text-decoration: none; }
-        .site-nav a:hover { background: var(--border); }
-        h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 12px 0; color: var(--text); border-bottom: 2px solid var(--accent); padding-bottom: 10px; }
-        .back-link { display: inline-block; margin-bottom: 16px; color: var(--accent); text-decoration: none; font-size: 0.9rem; }
-        .back-link:hover { text-decoration: underline; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); }
-        th { background: var(--border); font-weight: 600; font-size: 0.8rem; }
-        tr:hover { background: #f1f5f9; }
-        .confidence { font-weight: bold; }
-        .confidence.high { color: var(--green); }
-        .confidence.medium { color: var(--orange); }
-        .confidence.low { color: var(--red); }
-        .activity { padding: 4px 8px; border-radius: 4px; display: inline-block; }
-        .activity.standing { background: #dcfce7; color: #166534; }
-        .activity.unknown { background: #fff7ed; color: #c2410c; }
-        .refresh-info { color: var(--muted); font-size: 0.8rem; margin-top: 12px; }
-    </style>
+    <link rel="stylesheet" href="/static/css/untitled-ui.css">
     <script>
         // Auto refresh every 3 seconds
         setTimeout(function() {
@@ -39,18 +13,20 @@
     </script>
 </head>
 <body>
-    <div class="container">
-        <header class="site-header">
+    <div class="app-layout">
+        <aside class="sidebar">
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
-                <a href="/dashboard">Overview</a>
-                <a href="/windows">Recent Windows</a>
-                <a href="/persons">Person Management</a>
-                <a href="/unknown-persons">Unknown Persons</a>
-                <a href="/alerts">Alerts / Critical Events</a>
-                <a href="/system">Models / System</a>
+                <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
+                <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
+                <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
+                <a href="/system"><span class="nav-icon icon-system"></span>Models / System</a>
             </nav>
-        </header>
+        </aside>
+        <main class="main-content">
+            <div class="container">
         <a href="/dashboard" class="back-link">← Back to Dashboard</a>
         <h1>Device: {{ device_id }}</h1>
         <p>Showing last {{ limit }} events for this device (auto-refreshes every 3 seconds)</p>
@@ -111,6 +87,8 @@
         <div class="refresh-info">
             Last updated: <span id="timestamp"></span>
         </div>
+            </div>
+        </main>
     </div>
     
     <script>
