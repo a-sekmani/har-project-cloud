@@ -13,7 +13,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label">Edit Windows</a>
+                </div>
                 <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons" class="active"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -24,6 +27,7 @@
             <div class="container">
         <h1>Unknown Persons</h1>
         <div class="header">
+            <h2 class="filters-title">Filters</h2>
             <div class="filter-row">
                 <div>
                     <label for="time_range">Time range</label>
@@ -85,13 +89,10 @@
             <div class="filter-row">
                 <div class="filters">
                     <label class="cb"><input type="checkbox" id="filter_only_alerts"> Show only alerts</label>
-                    <label class="cb"><input type="checkbox" id="group_by_track"> Group by track</label>
                     <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn primary" id="refresh_btn">Refresh</button>
-                    <button type="button" class="btn" id="create_person_btn" disabled>Create Person From Window</button>
-                    <button type="button" class="btn" id="assign_btn" disabled>Assign to Person</button>
+                    <button type="button" class="btn" id="clear_filters">Clear filters</button>
                 </div>
             </div>
         </div>
@@ -114,7 +115,13 @@
             </div>
         </div>
         <div class="card">
-            <h2>Unknown Windows</h2>
+            <div class="card-header-row">
+                <h2>Unknown Windows</h2>
+                <div class="card-actions">
+                    <button type="button" class="btn" id="assign_btn" disabled>Assign to Person</button>
+                    <button type="button" class="btn" id="create_person_btn" disabled>Create Person From Window</button>
+                </div>
+            </div>
             <table>
                 <thead>
                     <tr>
@@ -126,26 +133,13 @@
                         <th>Pred Conf</th>
                         <th>Face Conf</th>
                         <th>Window ID</th>
-                        <th>Duration</th>
-                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tbody">
-                    <tr><td colspan="10" class="empty">Loading…</td></tr>
+                    <tr><td colspan="8" class="empty">Loading…</td></tr>
                 </tbody>
             </table>
             <div class="pagination" id="pagination_windows"></div>
-        </div>
-        <div class="card alerts-section" id="alerts_section">
-            <h2>Unknown Person Alerts</h2>
-            <p class="meta">Unknown windows with alert-type activity (e.g. falling_down, chest_pain).</p>
-            <table>
-                <thead><tr><th>Time</th><th>Camera</th><th>Activity</th><th>Conf</th><th>Actions</th></tr></thead>
-                <tbody id="tbody_alerts">
-                    <tr><td colspan="5" class="empty">Loading…</td></tr>
-                </tbody>
-            </table>
-            <div class="pagination" id="pagination_alerts"></div>
         </div>
             </div>
         </main>
@@ -184,15 +178,12 @@
     <script>
 (function() {
     const API_KEY = {{ api_key|tojson }};
-    const ALERT_ACTIVITIES = ['falling_down', 'chest_pain', 'nausea_vomiting', 'headache', 'back_pain'];
     let chartDistribution = null;
     let chartTimeline = null;
     let refreshTimer = null;
     const REFRESH_INTERVAL_MS = 5000;
     let currentPage = 1;
     let hasMoreWindows = false;
-    let alertCurrentPage = 1;
-    let alertHasMore = false;
 
     function getTimeRange() {
         const v = document.getElementById('time_range').value;
@@ -216,7 +207,6 @@
     }
 
     const WINDOWS_PAGE_SIZE = 100;
-    const ALERTS_PAGE_SIZE = 100;
 
     function buildWindowsParams() {
         const tr = getTimeRange();
@@ -240,25 +230,6 @@
         const maxFace = document.getElementById('max_face_conf').value;
         if (maxFace) params.set('max_face_conf', maxFace);
         if (document.getElementById('filter_only_alerts').checked) params.set('only_alerts', 'true');
-        return params;
-    }
-
-    function buildAlertsParams() {
-        const tr = getTimeRange();
-        const params = new URLSearchParams();
-        params.set('since', tr.since);
-        params.set('until', tr.until);
-        params.set('only_unknown_person', 'true');
-        params.set('only_with_predictions', 'true');
-        params.set('only_alerts', 'true');
-        params.set('limit', String(ALERTS_PAGE_SIZE));
-        params.set('offset', String((alertCurrentPage - 1) * ALERTS_PAGE_SIZE));
-        const model = document.getElementById('model_key').value;
-        if (model) params.set('model_key', model);
-        const dev = document.getElementById('filter_device').value;
-        if (dev) params.set('device_id', dev);
-        const cam = document.getElementById('filter_camera').value;
-        if (cam) params.set('camera_id', cam);
         return params;
     }
 
@@ -347,11 +318,6 @@
         return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' });
     }
 
-    function durationMs(tsStart, tsEnd) {
-        if (tsStart == null || tsEnd == null) return '—';
-        return ((tsEnd - tsStart) / 1000).toFixed(1) + 's';
-    }
-
     function fillActivityFilter(labels) {
         const sel = document.getElementById('filter_activity');
         const cur = sel.value;
@@ -412,8 +378,6 @@
         const predConf = pred.pred_conf;
         const faceConf = row.person_conf;
         const faceHint = (faceConf != null && faceConf < 0.5) ? ' <span class="conf-low" title="Low confidence">(low)</span>' : '';
-        const viewUrl = '/windows?window_id=' + encodeURIComponent(row.id || '');
-        const dur = durationMs(row.ts_start_ms, row.ts_end_ms);
         return '<tr data-window-id="' + escapeAttr(row.id) + '" class="data-row">' +
             '<td><input type="checkbox" class="row-select"></td>' +
             '<td>' + formatTime(row.created_at) + '</td>' +
@@ -422,69 +386,20 @@
             '<td>' + escapeAttr(pred.pred_label) + '</td>' +
             '<td><span class="' + confClass(predConf) + '">' + (predConf != null ? predConf.toFixed(2) : '—') + '</span></td>' +
             '<td><span class="' + confClass(faceConf) + '">' + (faceConf != null ? faceConf.toFixed(2) : '—') + '</span>' + faceHint + '</td>' +
-            '<td class="win-id">' + (row.id ? row.id.slice(0, 8) + '… <button type="button" class="btn btn-sm" data-copy-id="' + escapeAttr(row.id) + '">Copy</button>' : '—') + '</td>' +
-            '<td>' + dur + '</td>' +
-            '<td><a href="' + viewUrl + '" class="btn btn-sm">View</a></td>' +
+            '<td class="win-id">' + (row.id ? row.id.slice(0, 8) + '…' : '—') + '</td>' +
             '</tr>';
     }
 
     function renderTable(rows) {
         const tbody = document.getElementById('tbody');
-        const groupByTrack = document.getElementById('group_by_track') && document.getElementById('group_by_track').checked;
         if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="empty">No unknown windows in this period.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty">No unknown windows in this period.</td></tr>';
             updateAssignButton();
             return;
         }
-        if (!groupByTrack) {
-            tbody.innerHTML = rows.map(rowHtml).join('');
-        } else {
-            var key = function(r) { return (r.camera_id || '') + '|' + (r.track_id != null ? r.track_id : ''); };
-            var groups = {};
-            rows.forEach(function(r) {
-                var k = key(r);
-                if (!groups[k]) groups[k] = [];
-                groups[k].push(r);
-            });
-            var html = '';
-            Object.keys(groups).sort().forEach(function(k) {
-                var list = groups[k];
-                var first = list[0];
-                var cam = first.camera_id || '—';
-                var tr = first.track_id != null ? first.track_id : '—';
-                var groupId = 'g-' + k.replace(/\|/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
-                html += '<tr class="track-group-header" data-group-id="' + groupId + '"><td><input type="checkbox" class="track-select-all" data-group-id="' + groupId + '" title="Select all in track"></td><td colspan="8">' +
-                    '<span class="toggler">▼</span> ' + escapeAttr(cam) + ' · Track ' + escapeAttr(tr) + ' (' + list.length + ' window' + (list.length !== 1 ? 's' : '') + ')</td><td></td></tr>';
-                list.forEach(function(r) {
-                    html += rowHtml(r).replace('class="data-row"', 'class="data-row track-group-row ' + groupId + '"');
-                });
-            });
-            tbody.innerHTML = html;
-            tbody.querySelectorAll('.track-group-header').forEach(function(tr) {
-                var gid = tr.dataset.groupId;
-                tr.addEventListener('click', function(e) {
-                    if (e.target.type === 'checkbox') return;
-                    var bodyRows = tbody.querySelectorAll('tr.track-group-row.' + gid);
-                    var collapsed = bodyRows.length && bodyRows[0].classList.contains('collapsed');
-                    bodyRows.forEach(function(r) { r.classList.toggle('collapsed', !collapsed); });
-                    var toggler = tr.querySelector('.toggler');
-                    if (toggler) toggler.textContent = collapsed ? '▼' : '▶';
-                });
-            });
-            tbody.querySelectorAll('.track-select-all').forEach(function(cb) {
-                cb.addEventListener('click', function(e) { e.stopPropagation(); });
-                cb.addEventListener('change', function() {
-                    var gid = cb.dataset.groupId;
-                    tbody.querySelectorAll('tr.track-group-row.' + gid + ' .row-select').forEach(function(c) { c.checked = cb.checked; });
-                    updateAssignButton();
-                });
-            });
-        }
+        tbody.innerHTML = rows.map(rowHtml).join('');
         tbody.querySelectorAll('.row-select').forEach(function(cb) {
             cb.addEventListener('change', updateAssignButton);
-        });
-        tbody.querySelectorAll('button[data-copy-id]').forEach(function(btn) {
-            btn.addEventListener('click', function() { copyId(btn.dataset.copyId); });
         });
         document.getElementById('select_all').checked = false;
         updateAssignButton();
@@ -512,30 +427,8 @@
         });
     }
 
-    function renderPaginationAlerts() {
-        const el = document.getElementById('pagination_alerts');
-        var html = '';
-        if (alertCurrentPage > 1) {
-            html += '<button type="button" class="btn btn-page" data-page="' + (alertCurrentPage - 1) + '">Prev</button>';
-        }
-        var maxShow = Math.max(alertCurrentPage, 5);
-        for (var p = 1; p <= maxShow; p++) {
-            html += '<button type="button" class="btn btn-page' + (p === alertCurrentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
-        }
-        if (alertHasMore) {
-            html += '<button type="button" class="btn btn-page" data-page="' + (alertCurrentPage + 1) + '">Next</button>';
-        }
-        el.innerHTML = html || '<span style="color:var(--muted);">Page ' + alertCurrentPage + '</span>';
-        el.querySelectorAll('.btn-page').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var p = parseInt(btn.dataset.page, 10);
-                if (p >= 1) { alertCurrentPage = p; fetchAlerts(); }
-            });
-        });
-    }
-
     function fetchWindows() {
-        document.getElementById('tbody').innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
+        document.getElementById('tbody').innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
         const params = buildWindowsParams();
         fetch('/v1/dashboard/windows?' + params.toString(), { headers: { 'X-API-Key': API_KEY } })
             .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -546,44 +439,14 @@
                 renderPaginationWindows();
             })
             .catch(function(err) {
-                document.getElementById('tbody').innerHTML = '<tr><td colspan="10" class="empty">Error: ' + escapeAttr(err.message) + '</td></tr>';
+                document.getElementById('tbody').innerHTML = '<tr><td colspan="8" class="empty">Error: ' + escapeAttr(err.message) + '</td></tr>';
                 setError(err.message || 'Failed to load windows');
             });
-    }
-
-    function fetchAlerts() {
-        document.getElementById('tbody_alerts').innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
-        const params = buildAlertsParams();
-        fetch('/v1/dashboard/windows?' + params.toString(), { headers: { 'X-API-Key': API_KEY } })
-            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-            .then(function(resp) {
-                const rows = (resp && resp.data) ? resp.data : [];
-                alertHasMore = !!(resp && resp.has_more);
-                renderAlertsTable(rows);
-                renderPaginationAlerts();
-            })
-            .catch(function() {
-                document.getElementById('tbody_alerts').innerHTML = '<tr><td colspan="5" class="empty">Error loading alerts.</td></tr>';
-            });
-    }
-
-    function renderAlertsTable(rows) {
-        const tbody = document.getElementById('tbody_alerts');
-        if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="empty">No unknown person alerts in this period.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(function(row) {
-            const pred = row.prediction || {};
-            const viewUrl = '/windows?window_id=' + encodeURIComponent(row.id || '');
-            return '<tr><td>' + formatTime(row.created_at) + '</td><td>' + escapeAttr(row.camera_id) + '</td><td>' + escapeAttr(pred.pred_label) + '</td><td>' + (pred.pred_conf != null ? (pred.pred_conf * 100).toFixed(0) + '%' : '—') + '</td><td><a href="' + viewUrl + '" class="btn btn-sm">View</a></td></tr>';
-        }).join('');
     }
 
     function refreshAll() {
         fetchOverview();
         fetchWindows();
-        fetchAlerts();
     }
 
     function assignToPerson(personId) {
@@ -632,7 +495,6 @@
     });
     function applyFilters() {
         currentPage = 1;
-        alertCurrentPage = 1;
         refreshAll();
     }
     document.getElementById('time_range').addEventListener('change', applyFilters);
@@ -643,8 +505,16 @@
     document.getElementById('max_pred_conf').addEventListener('change', applyFilters);
     document.getElementById('max_face_conf').addEventListener('change', applyFilters);
     document.getElementById('filter_only_alerts').addEventListener('change', applyFilters);
-    document.getElementById('group_by_track').addEventListener('change', refreshAll);
-    document.getElementById('refresh_btn').addEventListener('click', refreshAll);
+    document.getElementById('clear_filters').addEventListener('click', function() {
+        document.getElementById('time_range').value = '7d';
+        document.getElementById('filter_device').value = '';
+        document.getElementById('filter_camera').value = '';
+        document.getElementById('filter_activity').value = '';
+        document.getElementById('max_pred_conf').value = '';
+        document.getElementById('max_face_conf').value = '';
+        document.getElementById('filter_only_alerts').checked = false;
+        refreshAll();
+    });
     document.getElementById('assign_btn').addEventListener('click', openAssignModal);
     document.getElementById('assign_modal_close').addEventListener('click', function() { document.getElementById('assign_modal').classList.remove('show'); });
     document.getElementById('assign_confirm').addEventListener('click', function() {

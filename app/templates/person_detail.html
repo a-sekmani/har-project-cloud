@@ -13,7 +13,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label">Edit Windows</a>
+                </div>
                 <a href="/persons" class="active"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -27,7 +30,7 @@
         <div class="tabs">
             <button type="button" class="tab-btn active" data-tab="info">Information</button>
             <button type="button" class="tab-btn" data-tab="activities">Activities</button>
-            <button type="button" class="tab-btn" data-tab="windows">Recent Windows</button>
+            <button type="button" class="tab-btn" data-tab="windows">Activity Windows</button>
         </div>
 
         <div id="tab_info" class="tab-panel active">
@@ -71,6 +74,7 @@
 
         <div id="tab_activities" class="tab-panel">
             <div class="header">
+                <h2 class="filters-title">Filters</h2>
                 <div class="filter-row">
                     <div>
                         <label for="activity_time_range">Time range</label>
@@ -96,8 +100,9 @@
 
         <div id="tab_windows" class="tab-panel">
             <div class="card">
-                <h2>Recent Windows</h2>
+                <h2>Activity Windows</h2>
                 <div class="header">
+                    <h2 class="filters-title">Filters</h2>
                     <div class="filter-row">
                         <div>
                             <label for="windows_model_key">Model</label>
@@ -141,7 +146,7 @@
                             <label class="cb"><input type="checkbox" id="windows_auto_refresh" checked> Auto-refresh (5s)</label>
                         </div>
                         <div class="actions">
-                            <button type="button" class="btn primary" id="windows_refresh_btn">Refresh now</button>
+                            <button type="button" class="btn" id="windows_clear_filters">Clear filters</button>
                         </div>
                     </div>
                 </div>
@@ -722,7 +727,16 @@
         if (el) el.addEventListener('change', () => { windowsCurrentPage = 1; fetchWindowsPage(); });
     });
     document.getElementById('windows_auto_refresh').addEventListener('change', scheduleWindowsRefresh);
-    document.getElementById('windows_refresh_btn').addEventListener('click', () => fetchWindowsPage());
+    document.getElementById('windows_clear_filters').addEventListener('click', () => {
+        document.getElementById('windows_limit').value = '100';
+        document.getElementById('windows_filter_device').value = '';
+        document.getElementById('windows_filter_camera').value = '';
+        document.getElementById('windows_filter_activity').value = '';
+        document.getElementById('windows_filter_only_pred').checked = false;
+        document.getElementById('windows_filter_low_conf').checked = false;
+        windowsCurrentPage = 1;
+        fetchWindowsPage();
+    });
 
     fetchDetail();
     fetchFaces();

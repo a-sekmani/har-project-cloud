@@ -681,7 +681,7 @@ Ingest a full window from the edge device. Prediction runs automatically using t
 
 **Date and time format (from edge):**
 
-Each window is stored with a single timestamp `created_at` (date + time). The Recent Windows page shows both **Date** and **Time** columns. To have correct date and time stored and displayed, the edge should send `created_at` as an ISO 8601 string **with timezone**.
+Each window is stored with a single timestamp `created_at` (date + time). The Activity Windows page shows both **Date** and **Time** columns. To have correct date and time stored and displayed, the edge should send `created_at` as an ISO 8601 string **with timezone**.
 
 | Format | Example | Notes |
 |--------|---------|-------|
@@ -880,7 +880,7 @@ Get windows with predictions for the dashboard. Supports filtering and paginatio
 | until | string | - | ISO datetime (inclusive) – end of time range |
 | min_face_conf | float | - | Min face/person confidence (0–1) |
 | max_face_conf | float | - | Max face/person confidence (0–1) |
-| only_alerts | boolean | false | Only windows whose prediction is in alert activities (e.g. falling_down, chest_pain) |
+| only_alerts | boolean | false | Only windows whose prediction is falling_down |
 
 **Response:** Object with `data` (array of windows) and `has_more` (boolean; true if more pages exist).
 ```json
@@ -938,7 +938,7 @@ Dashboard overview: aggregated stats, activity distribution, timeline, person pr
 | camera_id | string | Filter by camera |
 | device_id | string | Filter by device |
 | activity | string | Filter by prediction label (`pred_label`) |
-| only_alerts | boolean | Only include windows whose prediction is in the alert activities set (e.g. falling_down, chest_pain) |
+| only_alerts | boolean | Only include windows whose prediction is falling_down |
 | only_unknown_person | boolean | Only windows with no identified person |
 | only_known_person | boolean | Only windows with an identified person |
 
@@ -992,7 +992,7 @@ Dashboard overview: aggregated stats, activity distribution, timeline, person pr
 
 | Section | Description |
 |---------|-------------|
-| stats | Total windows in range, distinct persons, unknown-person windows, distinct activities, count of alert activities, last window time |
+| stats | Total windows in range, distinct persons, unknown-person windows, distinct activities, count of falling_down alerts, last window time |
 | activity_distribution | Count of windows per predicted label |
 | activity_timeline | Time-bucketed counts for charts (by hour when range ≤24h, by day when range >24h) |
 | timeline_by_day | When true, timeline buckets are by calendar day (for week/month ranges); frontend may show dates instead of times |
@@ -1009,7 +1009,7 @@ curl -s "http://localhost:8000/v1/dashboard/overview?since=2026-03-04T10:00:00Z&
 
 ### GET /v1/dashboard/filter-options
 
-Distinct devices and cameras for dashboard filter dropdowns (e.g. Overview, Recent Windows, Unknown Persons, Label Windows).
+Distinct devices and cameras for dashboard filter dropdowns (e.g. Overview, Activity Windows, Unknown Persons, Edit Windows).
 
 **Query Parameters:**
 | Parameter | Type | Description |
@@ -1068,7 +1068,7 @@ Overview for the Unknown Persons page: stats, timeline, and activity distributio
 
 ### GET /v1/alerts
 
-List alert events: windows whose prediction is in the alert activities set (e.g. falling_down, chest_pain, nausea_vomiting, headache, back_pain). Used by the Alerts / Critical Events page.
+List alert events: windows whose prediction is **falling down** only. Both label variants `falling_down` and `falling down` are matched (model label_map may use either). Used by the Alerts / Critical Events page.
 
 **Query Parameters:**
 | Parameter | Type | Default | Description |

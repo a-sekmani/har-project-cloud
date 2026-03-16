@@ -12,7 +12,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label">Edit Windows</a>
+                </div>
                 <a href="/persons" class="active"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -23,14 +26,15 @@
             <div class="container">
         <h1>Person Management</h1>
         <div class="header">
-            <div class="header-left">
-                <button type="button" class="btn primary" id="btn_add_person">+ Add Person</button>
-                <button type="button" class="btn" id="btn_refresh">Refresh</button>
-            </div>
-            <div class="header-right">
-                <div class="badge version">
-                    <span>Gallery last updated:</span>
-                    <strong id="gallery_version">—</strong>
+            <div class="header-row">
+                <div class="header-left">
+                    <div class="badge version">
+                        <span>Gallery last updated:</span>
+                        <strong id="gallery_version">—</strong>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button type="button" class="btn primary" id="btn_add_person">+ Add Person</button>
                 </div>
             </div>
         </div>
@@ -42,23 +46,28 @@
         <div class="meta">
             <span id="message_area"></span>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Person Name</th>
-                    <th>Person ID</th>
-                    <th>Faces Count</th>
-                    <th>Last Seen</th>
-                    <th>Total Windows</th>
-                    <th>Main Activity</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="tbody">
-                <tr><td colspan="8" class="empty-state">Loading...</td></tr>
-            </tbody>
-        </table>
+        <div class="card">
+            <h2>List of people</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Person Name</th>
+                            <th>Person ID</th>
+                            <th>Faces Count</th>
+                            <th>Last Seen</th>
+                            <th>Total Windows</th>
+                            <th>Main Activity</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                        <tr><td colspan="8" style="text-align:center;color:var(--muted);">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
             </div>
         </main>
     </div>
@@ -170,7 +179,6 @@
                 '<td>' + escapeHtml(mainAct) + '</td>' +
                 '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
                 '<td>' +
-                    '<a href="/persons/' + p.id + '" class="btn btn-sm">View</a> ' +
                     '<button class="btn btn-sm btn-edit" data-id="' + p.id + '">Edit</button> ' +
                     '<a href="/persons/' + p.id + '#faces" class="btn btn-sm">Upload Faces</a> ' +
                     '<button class="btn btn-sm danger btn-delete" data-id="' + p.id + '">Delete</button>' +
@@ -317,11 +325,6 @@
         document.getElementById('add_external_ref').value = '';
         document.getElementById('add_modal').classList.add('show');
         document.getElementById('add_name').focus();
-    });
-
-    document.getElementById('btn_refresh').addEventListener('click', () => {
-        fetchPersons();
-        fetchGalleryVersion();
     });
 
     document.getElementById('add_form').addEventListener('submit', e => {

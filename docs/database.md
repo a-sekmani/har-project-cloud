@@ -46,3 +46,7 @@ Face images and embeddings per person: **person_id**, **image_path**, **original
 ### gallery_versions
 
 Face gallery version history: **version** (e.g. "v1", "v2"), **created_at**. Used by edge devices to know when to refresh their local gallery cache.
+
+### alert_status
+
+Alert status per window for the Alerts / Critical Events page: **window_id** (FK to pose_windows, primary key), **status** (`new`, `acknowledged`, `resolved`), **updated_at**.

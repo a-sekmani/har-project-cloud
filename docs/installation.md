@@ -93,5 +93,5 @@ Set `MODEL_KEY_DEFAULT` (e.g. `edge17_v6_lowlr`) for the dashboard default model
 5. **List windows:** `curl -s "http://localhost:8000/v1/windows?limit=5" -H "X-API-Key: dev-key"`
 6. **Run ONNX predict** (replace `WINDOW_ID`):  
    `curl -s -X POST "http://localhost:8000/v1/windows/WINDOW_ID/predict" -H "X-API-Key: dev-key" -H "Content-Type: application/json" -d '{"model_key":"edge17_v6_lowlr","store":true}'`
-7. **Recent Windows UI:** Open `http://localhost:8000/windows`
-8. **Label page:** `http://localhost:8000/windows/label`
+7. **Activity Windows UI:** Open `http://localhost:8000/windows`
+8. **Edit Windows page** (subpage of Activity Windows): `http://localhost:8000/windows/label`

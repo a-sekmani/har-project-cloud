@@ -1,6 +1,6 @@
 # Cloud HAR - Human Activity Recognition API
 
-Cloud service for human activity recognition from skeleton (pose) data. The web UI is titled **HAR Cloud App** and provides a unified header and navigation across all pages: **Overview** (stats, charts, person presence), **Recent Windows**, **Label Windows**, **Person Management**, **Unknown Persons** (unidentified windows, assign to person, create person from window), **Alerts / Critical Events**, and **Models / System**. It provides window-level inference, pose window storage, ONNX-based activity prediction, window ingest from edge devices (with optional person identification), and face recognition (person management and face gallery for edge sync).
+Cloud service for human activity recognition from skeleton (pose) data. The web UI is titled **HAR Cloud App** and provides a unified header and navigation across all pages: **Overview** (stats, charts, person presence), **Activity Windows** (with subpage **Edit Windows**), **Person Management**, **Unknown Persons** (unidentified windows, assign to person, create person from window), **Alerts / Critical Events**, and **Models / System**. It provides window-level inference, pose window storage, ONNX-based activity prediction, window ingest from edge devices (with optional person identification), and face recognition (person management and face gallery for edge sync).
 
 **Requirements:** Python 3.11+. For production: Docker Compose and PostgreSQL (or use SQLite for local development). All application text and documentation are in English.
 
@@ -25,7 +25,7 @@ Full documentation is in the **[docs/](docs/)** folder:
 2. **Migrations:** `alembic upgrade head`
 3. **Run API:** `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 4. **Health:** `curl http://localhost:8000/health`
-5. **UI:** [http://localhost:8000/dashboard](http://localhost:8000/dashboard) (Overview), [http://localhost:8000/windows](http://localhost:8000/windows) (Recent Windows), [http://localhost:8000/persons](http://localhost:8000/persons) (Person Management), [http://localhost:8000/unknown-persons](http://localhost:8000/unknown-persons) (Unknown Persons), [http://localhost:8000/alerts](http://localhost:8000/alerts) (Alerts), [http://localhost:8000/system](http://localhost:8000/system) (Models / System)
+5. **UI:** [http://localhost:8000/dashboard](http://localhost:8000/dashboard) (Overview), [http://localhost:8000/windows](http://localhost:8000/windows) (Activity Windows), [http://localhost:8000/windows/label](http://localhost:8000/windows/label) (Edit Windows, subpage of Activity Windows), [http://localhost:8000/persons](http://localhost:8000/persons) (Person Management), [http://localhost:8000/unknown-persons](http://localhost:8000/unknown-persons) (Unknown Persons), [http://localhost:8000/alerts](http://localhost:8000/alerts) (Alerts), [http://localhost:8000/system](http://localhost:8000/system) (Models / System)
 
 For detailed steps, examples, and options see [docs/installation.md](docs/installation.md).
 

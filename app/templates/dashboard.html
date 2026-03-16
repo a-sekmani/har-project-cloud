@@ -13,7 +13,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard" class="active"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label">Edit Windows</a>
+                </div>
                 <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -24,6 +27,7 @@
             <div class="container">
         <h1>Overview</h1>
         <div class="header">
+            <h2 class="filters-title">Filters</h2>
             <div class="filter-row">
                 <div>
                     <label for="time_range">Time range</label>
@@ -76,7 +80,7 @@
                     <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
+                    <button type="button" class="btn" id="clear_filters">Clear filters</button>
                 </div>
             </div>
         </div>
@@ -333,7 +337,18 @@
     document.getElementById('filter_only_unknown').addEventListener('change', fetchOverview);
     document.getElementById('filter_only_known').addEventListener('change', fetchOverview);
     document.getElementById('auto_refresh').addEventListener('change', scheduleRefresh);
-    document.getElementById('refresh_now').addEventListener('click', () => { fetchOverview(); });
+    document.getElementById('clear_filters').addEventListener('click', () => {
+        document.getElementById('time_range').value = '7d';
+        document.getElementById('filter_person').value = '';
+        document.getElementById('filter_device').value = '';
+        document.getElementById('filter_camera').value = '';
+        document.getElementById('filter_activity').value = '';
+        document.getElementById('filter_only_alerts').checked = false;
+        document.getElementById('filter_only_unknown').checked = false;
+        document.getElementById('filter_only_known').checked = false;
+        fetchFilterOptions();
+        fetchOverview();
+    });
 
     fetchPersons();
     loadActivityLabels();

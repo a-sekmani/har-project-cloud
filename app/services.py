@@ -642,6 +642,15 @@ def get_alerts(
         .limit(limit * 3)
         .all()
     )
+    # If no alerts for the selected model, try any model (e.g. edge sent with different model_key)
+    if not preds:
+        preds = (
+            db.query(WindowPrediction)
+            .filter(WindowPrediction.pred_label.in_(list(ALERT_ACTIVITIES)))
+            .order_by(desc(WindowPrediction.created_at))
+            .limit(limit * 3)
+            .all()
+        )
     if not preds:
         return []
     seen_w: set[UUID] = set()
@@ -663,9 +672,11 @@ def get_alerts(
         w = windows.get(p.window_id)
         if w is None:
             continue
-        if since is not None and w.created_at < since:
+        # Normalise to UTC-aware for comparison (SQLite may return naive datetimes)
+        w_created = w.created_at if w.created_at.tzinfo else w.created_at.replace(tzinfo=UTC)
+        if since is not None and w_created < since:
             continue
-        if until is not None and w.created_at > until:
+        if until is not None and w_created > until:
             continue
         st = status_map.get(w.id, "new")
         if status_filter is not None and st != status_filter:

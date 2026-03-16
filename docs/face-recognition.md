@@ -32,4 +32,4 @@ Full request/response schemas, headers, and examples are in the [API Reference](
 
 ## Linking Windows to Persons
 
-When ingesting a window, the edge can send an optional **person** object (person_id, person_name, person_conf, gallery_version). The cloud stores this with the window so the Recent Windows page and API can show who was identified. The person_id must refer to an existing person in the database; otherwise the ingest returns 400. See [Edge Integration](edge-integration.md) and [API Reference – Windows Ingest](API.md#post-v1windowsingest).
+When ingesting a window, the edge can send an optional **person** object (person_id, person_name, person_conf, gallery_version). The cloud stores this with the window so the Activity Windows page and API can show who was identified. The person_id must refer to an existing person in the database; otherwise the ingest returns 400. See [Edge Integration](edge-integration.md) and [API Reference – Windows Ingest](API.md#post-v1windowsingest).

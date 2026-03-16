@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Label Windows</title>
+    <title>Edit Windows</title>
     <link rel="stylesheet" href="/static/css/untitled-ui.css">
 </head>
 <body>
@@ -12,7 +12,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows" class="active"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label" class="active">Edit Windows</a>
+                </div>
                 <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -21,8 +24,9 @@
         </aside>
         <main class="main-content">
             <div class="container">
-        <h1>Label Windows</h1>
+        <h1>Edit Windows</h1>
         <div class="header">
+            <h2 class="filters-title">Filters</h2>
             <div class="filter-row">
                 <div>
                     <label for="model_key">Model</label>
@@ -77,36 +81,38 @@
                     <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
+                    <button type="button" class="btn" id="clear_filters">Clear filters</button>
                 </div>
             </div>
         </div>
         <div class="meta">
             <span id="last_error" class="error"></span>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th><input type="checkbox" id="select_all" title="Select all"></th>
-                    <th>Time</th>
-                    <th>Window ID</th>
-                    <th>Device</th>
-                    <th>Camera</th>
-                    <th>Track</th>
-                    <th>Person</th>
-                    <th>Face Conf</th>
-                    <th>Activity</th>
-                    <th>Set label</th>
-                    <th>Predicted</th>
-                    <th>Pred Conf</th>
-                    <th>Match?</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="tbody">
-                <tr><td colspan="14" style="text-align:center;color:var(--muted);">Loading…</td></tr>
-            </tbody>
-        </table>
+        <div class="card">
+            <h2>Windows</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Window ID</th>
+                            <th>Device</th>
+                            <th>Person</th>
+                            <th>Face Conf</th>
+                            <th>Activity</th>
+                            <th>Set label</th>
+                            <th>Predicted</th>
+                            <th>Pred Conf</th>
+                            <th>Match?</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                        <tr><td colspan="11" style="text-align:center;color:var(--muted);">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
         <div class="pagination" id="pagination"></div>
             </div>
         </main>
@@ -176,6 +182,11 @@
         if (cur && list.indexOf(cur) !== -1) sel.value = cur;
     }
 
+    function formatDate(iso) {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
     function formatTime(iso) {
         if (!iso) return '—';
         return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -201,7 +212,7 @@
         currentRows = rows;
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(row => {
@@ -216,25 +227,18 @@
                 : personName;
             const opts = (currentLabels || []).map(l => '<option value="' + l + '"' + (row.label === l ? ' selected' : '') + '>' + l + '</option>').join('');
             return '<tr data-id="' + (row.id || '') + '">' +
-                '<td><input type="checkbox" class="row-cb" data-id="' + (row.id || '') + '"></td>' +
+                '<td>' + formatDate(row.created_at) + '</td>' +
                 '<td>' + formatTime(row.created_at) + '</td>' +
-                '<td class="win-id">' + shortId(row.id) + ' <button type="button" class="btn btn-sm copy-id" data-id="' + (row.id || '') + '">Copy</button></td>' +
+                '<td class="win-id">' + shortId(row.id) + '</td>' +
                 '<td>' + (row.device_id ?? '—') + '</td>' +
-                '<td>' + (row.camera_id ?? '—') + '</td>' +
-                '<td>' + (row.track_id ?? '—') + '</td>' +
                 '<td class="row-person">' + personCell + '</td>' +
                 '<td class="row-person-conf"><span class="' + confClass(personConf) + '">' + (personConf != null ? personConf.toFixed(2) : '—') + '</span></td>' +
                 '<td class="row-activity">' + (row.label || '—') + '</td>' +
-                '<td><select class="set-label-sel" data-id="' + (row.id || '') + '"><option value="">—</option>' + opts + '</select> <button type="button" class="btn btn-sm set-label-btn" data-id="' + (row.id || '') + '">Set</button></td>' +
+                '<td class="set-label-cell"><div class="set-label-inner"><select class="set-label-sel" data-id="' + (row.id || '') + '"><option value="">—</option>' + opts + '</select><button type="button" class="btn btn-sm set-label-btn" data-id="' + (row.id || '') + '">Set</button></div></td>' +
                 '<td>' + (pred.pred_label || '—') + '</td>' +
                 '<td>' + confStr + '</td>' +
-                '<td class="row-match">' + match + '</td>' +
-                '<td><span class="row-error"></span></td>' +
-                '</tr>';
+                '<td class="row-match">' + match + '</td></tr>';
         }).join('');
-        tbody.querySelectorAll('.copy-id').forEach(btn => {
-            btn.addEventListener('click', () => navigator.clipboard.writeText(btn.dataset.id || ''));
-        });
         tbody.querySelectorAll('.set-label-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tr = btn.closest('tr');
@@ -244,14 +248,11 @@
                 setLabel(id, label, tr);
             });
         });
-        document.getElementById('select_all').addEventListener('change', e => {
-            tbody.querySelectorAll('.row-cb').forEach(cb => { cb.checked = e.target.checked; });
-        });
     }
 
     function setLabel(windowId, label, trRow) {
-        const errEl = trRow ? trRow.querySelector('.row-error') : null;
-        if (errEl) errEl.textContent = '';
+        const lastErr = document.getElementById('last_error');
+        if (lastErr) lastErr.textContent = '';
         fetch('/v1/windows/' + encodeURIComponent(windowId) + '/label', {
             method: 'POST',
             headers: API_HEADERS,
@@ -269,7 +270,7 @@
                 }
             })
             .catch(err => {
-                if (errEl) errEl.textContent = err.message || 'Failed';
+                if (lastErr) lastErr.textContent = 'Set label failed: ' + (err.message || 'Failed');
             });
     }
 
@@ -356,7 +357,20 @@
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', () => { currentPage = 1; fetchData(); });
     });
-    document.getElementById('refresh_now').addEventListener('click', fetchData);
+    document.getElementById('clear_filters').addEventListener('click', function() {
+        document.getElementById('limit').value = '100';
+        document.getElementById('filter_person').value = '';
+        document.getElementById('filter_device').value = '';
+        document.getElementById('filter_camera').value = '';
+        document.getElementById('filter_activity').value = '';
+        document.getElementById('filter_only_unlabeled').checked = false;
+        document.getElementById('filter_only_labeled').checked = false;
+        document.getElementById('filter_only_mismatches').checked = false;
+        var predConf = document.getElementById('filter_pred_conf');
+        if (predConf) predConf.value = '';
+        currentPage = 1;
+        fetchData();
+    });
 
     fetchFilterOptions();
     fetchPersonFilter();

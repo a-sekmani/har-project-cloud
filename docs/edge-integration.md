@@ -10,7 +10,7 @@ Full request/response details and query parameters are in the [API Reference –
 
 ## Date and Time Format (from Edge)
 
-Each window is stored with a single timestamp `created_at` (date and time). The Recent Windows page displays both **Date** and **Time** columns. To ensure correct storage and display, the edge should send `created_at` as an **ISO 8601 string with timezone**.
+Each window is stored with a single timestamp `created_at` (date and time). The Activity Windows page displays both **Date** and **Time** columns. To ensure correct storage and display, the edge should send `created_at` as an **ISO 8601 string with timezone**.
 
 ### Recommended formats
 

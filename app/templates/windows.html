@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recent Windows</title>
+    <title>Activity Windows</title>
     <link rel="stylesheet" href="/static/css/untitled-ui.css">
 </head>
 <body>
@@ -12,7 +12,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows" class="active"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows" class="active"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label">Edit Windows</a>
+                </div>
                 <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -21,8 +24,9 @@
         </aside>
         <main class="main-content">
             <div class="container">
-        <h1>Recent Windows</h1>
+        <h1>Activity Windows</h1>
         <div class="header">
+            <h2 class="filters-title">Filters</h2>
             <div class="filter-row">
                 <div>
                     <label for="model_key">Model</label>
@@ -69,35 +73,37 @@
                     <label class="cb"><input type="checkbox" id="auto_refresh" checked> Auto-refresh (5s)</label>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn primary" id="refresh_now">Refresh now</button>
                     <button type="button" class="btn" id="clear_filters">Clear filters</button>
-                    <a href="/windows/label" class="btn" id="link_label">Open Label Windows</a>
                 </div>
             </div>
         </div>
         <div class="meta">
             <span id="last_error" class="error"></span>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Time</th>
-                    <th>Window ID</th>
-                    <th>Device</th>
-                    <th>FPS</th>
-                    <th>Person</th>
-                    <th>Face Conf</th>
-                    <th>Predicted</th>
-                    <th>Pred Conf</th>
-                    <th>Model</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="tbody">
-                <tr><td colspan="11" style="text-align:center;color:var(--muted);">Loading…</td></tr>
-            </tbody>
-        </table>
+        <div class="card">
+            <h2>Activity Windows</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Window ID</th>
+                            <th>Device</th>
+                            <th>FPS</th>
+                            <th>Person</th>
+                            <th>Face Conf</th>
+                            <th>Predicted</th>
+                            <th>Pred Conf</th>
+                            <th>Model</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                        <tr><td colspan="10" style="text-align:center;color:var(--muted);">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
         <div class="pagination" id="pagination"></div>
             </div>
         </main>
@@ -210,10 +216,9 @@
         currentRows = rows;
         const tbody = document.getElementById('tbody');
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);">No windows.</td></tr>';
             return;
         }
-        const model = document.getElementById('model_key').value;
         tbody.innerHTML = rows.map(row => {
             const pred = row.prediction || {};
             const conf = pred.pred_conf;
@@ -233,10 +238,7 @@
                 '<td><span class="' + confClass(personConf) + '">' + (personConf != null ? personConf.toFixed(2) : '—') + '</span></td>' +
                 '<td>' + (pred.pred_label || '—') + '</td>' +
                 '<td><span class="' + confClass(conf) + '">' + (conf != null ? conf.toFixed(2) : '—') + '</span></td>' +
-                '<td>' + modelStr + '</td>' +
-                '<td>' +
-                '<a href="/windows/label?model_key=' + encodeURIComponent(model) + '&window_id=' + encodeURIComponent(row.id || '') + '" class="btn btn-sm">Label</a>' +
-                '</td></tr>';
+                '<td>' + modelStr + '</td></tr>';
         }).join('');
     }
 
@@ -324,7 +326,6 @@
     document.getElementById('filter_activity').addEventListener('change', () => { currentPage = 1; fetchData(); });
     document.getElementById('filter_only_pred').addEventListener('change', () => { currentPage = 1; fetchData(); });
     document.getElementById('filter_low_conf').addEventListener('change', () => { currentPage = 1; fetchData(); });
-    document.getElementById('refresh_now').addEventListener('click', () => { fetchData(); });
     document.getElementById('clear_filters').addEventListener('click', () => {
         document.getElementById('filter_device').value = '';
         document.getElementById('filter_camera').value = '';
@@ -334,8 +335,6 @@
         currentPage = 1;
         fetchData();
     });
-    document.getElementById('link_label').href = '/windows/label?model_key=' + encodeURIComponent(document.getElementById('model_key').value);
-    document.getElementById('model_key').addEventListener('change', () => { document.getElementById('link_label').href = '/windows/label?model_key=' + encodeURIComponent(document.getElementById('model_key').value); });
     document.getElementById('modal_close').addEventListener('click', () => document.getElementById('detail_modal').classList.remove('show'));
     document.getElementById('detail_modal').addEventListener('click', e => { if (e.target.id === 'detail_modal') e.target.classList.remove('show'); });
 

@@ -12,7 +12,10 @@
             <a href="/dashboard" class="site-logo">HAR Cloud App</a>
             <nav class="site-nav">
                 <a href="/dashboard"><span class="nav-icon icon-overview"></span>Overview</a>
-                <a href="/windows"><span class="nav-icon icon-windows"></span>Recent Windows</a>
+                <a href="/windows"><span class="nav-icon icon-windows"></span>Activity Windows</a>
+                <div class="nav-sub">
+                    <a href="/windows/label">Edit Windows</a>
+                </div>
                 <a href="/persons"><span class="nav-icon icon-persons"></span>Person Management</a>
                 <a href="/unknown-persons"><span class="nav-icon icon-unknown"></span>Unknown Persons</a>
                 <a href="/alerts" class="active"><span class="nav-icon icon-alerts"></span>Alerts</a>
@@ -22,11 +25,14 @@
         <main class="main-content">
             <div class="container">
         <h1>Alerts / Critical Events</h1>
+        <p class="meta" style="margin-bottom: var(--spacing-4);">Only <strong>falling down</strong> events are shown here to alert you.</p>
         <div class="header">
+            <h2 class="filters-title">Filters</h2>
             <div class="filter-row">
                 <div>
                     <label for="time_range">Time range</label>
                     <select id="time_range">
+                        <option value="">All time</option>
                         <option value="24h">Last 24 hours</option>
                         <option value="7d" selected>Last week</option>
                         <option value="30d">Last month</option>
@@ -50,7 +56,7 @@
                     </select>
                 </div>
                 <div>
-                    <button type="button" class="btn primary" id="refresh_btn">Refresh</button>
+                    <button type="button" class="btn" id="clear_filters">Clear filters</button>
                 </div>
             </div>
         </div>
@@ -80,6 +86,7 @@
 
     function getTimeRange() {
         const v = document.getElementById('time_range').value;
+        if (!v) return { since: null, until: null };
         const now = new Date();
         const until = now.toISOString();
         let since = new Date(now);
@@ -92,8 +99,8 @@
     function buildParams() {
         const tr = getTimeRange();
         const params = new URLSearchParams();
-        params.set('since', tr.since);
-        params.set('until', tr.until);
+        if (tr.since) params.set('since', tr.since);
+        if (tr.until) params.set('until', tr.until);
         params.set('limit', '200');
         const model = document.getElementById('model_key').value;
         if (model) params.set('model_key', model);
@@ -129,7 +136,7 @@
     function render(alerts) {
         const tbody = document.getElementById('tbody');
         if (!alerts || alerts.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty">No alerts in this period.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="empty">No falling down events in this period. Try &quot;All time&quot; in the time range. Ensure windows are ingested with prediction enabled (or run Predict) so that <strong>falling_down</strong> predictions are stored.</td></tr>';
             return;
         }
         tbody.innerHTML = alerts.map(function(a) {
@@ -174,7 +181,11 @@
     document.getElementById('time_range').addEventListener('change', fetchAlerts);
     document.getElementById('model_key').addEventListener('change', fetchAlerts);
     document.getElementById('status_filter').addEventListener('change', fetchAlerts);
-    document.getElementById('refresh_btn').addEventListener('click', fetchAlerts);
+    document.getElementById('clear_filters').addEventListener('click', function() {
+        document.getElementById('time_range').value = '';
+        document.getElementById('status_filter').value = '';
+        fetchAlerts();
+    });
     fetchAlerts();
 })();
     </script>
